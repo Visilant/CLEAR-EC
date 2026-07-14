@@ -69,7 +69,7 @@ def calculate_cv(areas):
         return 0
     std_area = np.std(areas)
     cv = std_area / mean_area
-    return cv * 100
+    return cv
 
 
 def calculate_hexagonality(masks):
@@ -140,7 +140,7 @@ def calculate_hexagonality(masks):
 
     hexagonality = np.mean(hexagonalities) if len(hexagonalities) > 0 else 0
 
-    return hexagonality * 100
+    return hexagonality
 
 
 # =========================================================

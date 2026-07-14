@@ -2,6 +2,7 @@
 Cellpose v1.0 inference module for corneal endothelial cell segmentation.
 """
 
+import hashlib
 import os
 import random
 from pathlib import Path
@@ -49,6 +50,23 @@ def random_crop_bbox(shape, frac: float, rng: random.Random = None):
     y0 = rng.randint(0, max(0, h - ch))
     x0 = rng.randint(0, max(0, w - cw))
     return (x0, y0, x0 + cw, y0 + ch)
+
+
+def crop_rng_for_image(image: np.ndarray, base_seed) -> random.Random:
+    """Deterministic per-image RNG for the random crop.
+
+    The seed is derived from `base_seed` plus a hash of the image *content*, so
+    the same image always yields the same crop — independent of the filename and
+    of how many images were processed before it in this process. This keeps a
+    whole-folder local run (all images in one process, sharing one RNG) bit-for-
+    bit consistent with Grand Challenge, where every image is segmented in its
+    own fresh process re-seeded from scratch. When `base_seed` is None, fall back
+    to the shared module RNG (non-reproducible, legacy behaviour).
+    """
+    if base_seed is None:
+        return random
+    digest = hashlib.sha256(np.ascontiguousarray(image).tobytes()).hexdigest()
+    return random.Random(f"{base_seed}:{digest}")
 
 
 def crop_and_relabel_masks(masks: np.ndarray, bbox) -> np.ndarray:
@@ -211,8 +229,6 @@ def get_segmentation(
     """
     predictions = []
 
-    rng = random.Random(random_crop_seed) if random_crop_seed is not None else random
-
     # Initialize Cellpose v1.0 model (includes size model for diameter estimation)
     model = models.Cellpose(gpu=(device == "cuda"), model_type=model_type)
 
@@ -230,6 +246,7 @@ def get_segmentation(
         stem = pathname.stem
         crop_bbox = None
         if random_crop_frac is not None:
+            rng = crop_rng_for_image(image, random_crop_seed)
             crop_bbox = random_crop_bbox(image.shape, frac=random_crop_frac, rng=rng)
             print(f"  random crop ({random_crop_frac:.2f}) -> bbox={crop_bbox}, full image shape={image.shape}")
         elif annotations and stem in annotations and annotations[stem].get("bbox"):
