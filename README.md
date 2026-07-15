@@ -8,7 +8,7 @@ This repository provides a **baseline pipeline** and a **ready-to-submit algorit
 2. **Instance-level cell analysis**
 3. **Metric calculation** — **Cell Density (CD)**, **Coefficient of Variation (CV)**, and **Hexagonality (HEX)**
 
-The baseline is a transparent starting point: not the strongest possible solution, but a working reference showing how a raw image becomes the three challenge outputs. Everything in [`code/`](code/) is set up so you can **swap in your own method and submit it as a Docker container** without rebuilding the plumbing.
+The baseline is a transparent starting point: not the strongest possible solution, but a working reference showing how a raw image becomes the three challenge outputs. 
 
 ---
 
@@ -64,7 +64,7 @@ HEX = mean(IoU_i)
 
 Higher HEX means shapes closer to a regular hexagon. Returns `0` if no cells are found. (This IoU-to-fitted-hexagon definition is the implemented baseline; it is not a discrete "6-sided cell" count.)
 
-> **Region of interest (random crop).** The baseline segments the **full** image (so cells near the region boundary still get full surrounding context), then restricts the metrics to a deterministic random crop — 40% of H × 40% of W, seeded per image — by keeping only cells whose centroid lies inside the crop. See `code/inference.py` and `code/src/infer_cellpose_sam.py`.
+> **Region of interest (random crop).** The baseline segments the **full** image, then restricts the metrics to a deterministic random crop — 40% of H × 40% of W, seeded per image — by keeping only cells whose centroid lies inside the crop. See `code/inference.py` and `code/src/infer_cellpose_sam.py`.
 
 Each processed image yields a prediction row with `ID, CD, CV, HEX` (plus `SD`, `Total Area (µm²)`, and `Number of Cells`, which are not scored).
 
@@ -144,9 +144,6 @@ Download it and use it to build your own local validation set so you can measure
    python evaluate.py --predictions_csv ./my_val/predictions_test.csv \
                       --gt_csv /path/to/your_holdout_ground_truth.csv
    ```
-
-This gives you a fast, private proxy for the leaderboard: iterate locally as much as you want, and only submit when your held-out score looks good. Just remember your local numbers are an *estimate* — the hidden test set will differ, so avoid overfitting to your own split.
-
 ---
 
 ## Setup for local development
