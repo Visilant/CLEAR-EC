@@ -124,6 +124,31 @@ Each output file contains just a JSON-encoded number, e.g. `2750.0`. See `interf
 
 ---
 
+## Data and local validation
+
+**The test images and test ground truth are hidden** — they live only on Grand Challenge and are never released to participants. When you submit, the platform runs your container on those hidden cases and scores the outputs for you.
+
+What you **do** have is the **released training data** (images + their CD/CV/HEX ground truth), published on Zenodo:
+
+**➡️ https://zenodo.org/records/21270595**
+
+Download it and use it to build your own local validation set so you can measure your algorithm before every submission instead of burning submission attempts:
+
+1. **Split the training data yourself.** Hold out a portion of the released cases as a personal "test" set (e.g. 80/20), and keep it separate from anything you train or tune on.
+2. **Point `main.py` at your held-out images** to produce predictions:
+   ```bash
+   python main.py --data_dir /path/to/your_holdout_images --results_dir ./my_val
+   ```
+3. **Score against the training ground truth** with `evaluate.py`:
+   ```bash
+   python evaluate.py --predictions_csv ./my_val/predictions_test.csv \
+                      --gt_csv /path/to/your_holdout_ground_truth.csv
+   ```
+
+This gives you a fast, private proxy for the leaderboard: iterate locally as much as you want, and only submit when your held-out score looks good. Just remember your local numbers are an *estimate* — the hidden test set will differ, so avoid overfitting to your own split.
+
+---
+
 ## Setup for local development
 
 Iterating inside Docker is slow. Do your experimentation with `main.py` on a folder of images first, then containerize once it works.
@@ -225,7 +250,7 @@ Produces two artifacts in `code/`:
 
 ## Submitting to Grand Challenge
 
-The full walkthrough is in the phase pack READMEs (e.g. [`CLEAR-EC-phase-ii-final-evaluation-phase-kit/README.md`](CLEAR-EC-phase-ii-final-evaluation-phase-kit/README.md)). In short:
+The full walkthrough is:
 
 1. **Test locally** — `./do_test_run.sh` passes and writes valid JSON.
 2. **Save** — `./do_save.sh` produces the image and model tarballs.

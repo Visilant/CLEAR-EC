@@ -1,6 +1,7 @@
 """
-CLEAR-EC evaluation: compare a predictions CSV (from main.py) against the
-ground-truth CSV in CLEAR-EC/prepare_data/final_ids/final_{split}_ids.csv.
+CLEAR-EC evaluation: compare a predictions CSV (from main.py) against a
+ground-truth CSV (columns: ID, CD, CV, HEX) that you build from the released
+training data — e.g. /path/to/your_holdout_ground_truth.csv.
 
 Reports per-case CD/CV/HEX side-by-side, per-slide percent error, a
 best->worst ranking, and the average percent error across all slides.
@@ -14,7 +15,6 @@ import pandas as pd
 from src.utils.evaluate import evaluate_results
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 METRIC_COLS = ["CD", "CV", "HEX"]
 
 
@@ -29,9 +29,9 @@ def load_predictions(csv_path: Path) -> pd.DataFrame:
 
 def load_gt_from_csv(csv_path: Path) -> pd.DataFrame:
     """
-    CLEAR-EC ground truth (CD, CV, HEX) lives in
-    prepare_data/final_ids/final_{split}_ids.csv. The image filename stem
-    matches the `ID` column directly, so we keep `ID` as-is.
+    Ground-truth CSV with columns ID, CD, CV, HEX (built from the released
+    training data). The image filename stem matches the `ID` column directly,
+    so we keep `ID` as-is.
     """
     df = pd.read_csv(csv_path)
     missing = {"ID", *METRIC_COLS} - set(df.columns)
@@ -92,8 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Which CLEAR-EC split to evaluate. Sets default --predictions_csv / --gt_csv.")
     parser.add_argument("--predictions_csv", type=str, default='./results_mha/predictions_test.csv',
                         help="Path to predictions CSV (default: ./results_mha/predictions_<split>.csv).")
-    parser.add_argument("--gt_csv", type=str, default='/project/zhihuanglab/Peixian/CLEAR-EC/prepare_data_v2/final_ids/final_test_ids.csv',
-                        help="Path to ground-truth CSV (default: <repo>/prepare_data/final_ids/final_<split>_ids.csv).")
+    parser.add_argument("--gt_csv", type=str, default='/path/to/your_holdout_ground_truth.csv',
+                        help="Path to ground-truth CSV with columns ID, CD, CV, HEX (build this from the released training data).")
     parser.add_argument("--results_dir", type=str, default="./results_mha",
                         help="Where to write error CSVs (default: ./results_mha). Pass empty string to skip writing.")
     return parser
@@ -103,7 +103,7 @@ def resolve_paths(args) -> argparse.Namespace:
     if args.predictions_csv is None:
         args.predictions_csv = str(Path(args.results_dir) / f"predictions_{args.split}.csv")
     if args.gt_csv is None:
-        args.gt_csv = str(REPO_ROOT / "prepare_data" / "final_ids" / f"final_{args.split}_ids.csv")
+        args.gt_csv = "/path/to/your_holdout_ground_truth.csv"
     return args
 
 

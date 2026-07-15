@@ -1,7 +1,7 @@
 """
 CLEAR-EC segmentation pipeline.
 
-Reads TIFF images from CLEAR-EC/data/{split}/, segments each FULL image with
+Reads images from --data_dir (e.g. /path/to/your_holdout_images), segments each FULL image with
 Cellpose v1.0, then restricts metrics (CD, CV, HEX) to a random crop region
 (default 40% of H x 40% of W) by keeping only cells whose centroid lies in
 the crop. Cells near the crop boundary still benefit from full surrounding
@@ -20,9 +20,6 @@ import torch
 from cellpose import io
 
 from src.infer_cellpose_sam import get_segmentation
-
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def set_seed(seed: int) -> None:
@@ -95,9 +92,9 @@ def main(args):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CLEAR-EC: segment cropped TIFFs and write per-sample predictions.")
     parser.add_argument("--split", type=str, default="test", choices=["train", "test"],
-                        help="Which CLEAR-EC split to segment. Sets default --data_dir.")
-    parser.add_argument("--data_dir", type=str, default=None,
-                        help="Directory of input images (default: <repo>/data/<split>_mha).")
+                        help="Label for this run; used to name the predictions CSV (predictions_<split>.csv).")
+    parser.add_argument("--data_dir", type=str, default="/path/to/your_holdout_images",
+                        help="Directory of input images to segment (e.g. a held-out split of the released training data).")
     parser.add_argument("--results_dir", type=str, default="./results_mha",
                         help="Where to write the predictions CSV (default: ./results_mha).")
     parser.add_argument("--vis_output_dir", type=str, default="./results_mha/visualizations",
@@ -134,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def resolve_paths(args) -> argparse.Namespace:
     if args.data_dir is None:
-        args.data_dir = str(REPO_ROOT / "data" / f"{args.split}_mha")
+        args.data_dir = "/path/to/your_holdout_images"
     return args
 
 
