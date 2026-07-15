@@ -10,9 +10,6 @@ This repository provides a **baseline pipeline** and a **ready-to-submit algorit
 
 The baseline is a transparent starting point: not the strongest possible solution, but a working reference showing how a raw image becomes the three challenge outputs. Everything in [`code/`](code/) is set up so you can **swap in your own method and submit it as a Docker container** without rebuilding the plumbing.
 
-- **New here?** Read *The baseline pipeline* below for the science, then *Building your own method* for the engineering.
-- **Just want to submit?** Jump to *TL;DR — the three commands*.
-
 ---
 
 ## The baseline pipeline
@@ -73,7 +70,7 @@ Each processed image yields a prediction row with `ID, CD, CV, HEX` (plus `SD`, 
 
 ---
 
-## TL;DR — the three commands
+## Quick Start
 
 ```bash
 cd code
@@ -166,18 +163,13 @@ Key `main.py` arguments (run `python main.py -h` for the full list):
 
 ## Building your own method
 
-The container contract never changes — only what happens **between** reading the image and writing the three numbers. In practice you edit `code/src/` (and, if needed, `code/inference.py`) and leave the build/test/save machinery alone.
+The container contract never changes — only what happens **between** reading the image and writing the three numbers. In practice you edit `code/src/` and leave the build/test/save machinery alone.
 
 ### 1. Swap in your algorithm
 
-`inference.py` currently calls `get_segmentation(...)` from `src/infer_cellpose_sam.py`, which returns a prediction dict with `CD`, `CV`, and `HEX`. To use your own method, you have two clean options:
+`inference.py` currently calls `get_segmentation(...)` from `src/infer_cellpose_sam.py`, which returns a prediction dict with `CD`, `CV`, and `HEX`. To use your own method, the only hard requirement is: **read the image from `/input`, write three floats to `/output`, exit 0.**
 
-- **Keep the interface, change the internals.** Rewrite `src/infer_cellpose_sam.py` (or add your own module) so it still returns a dict/objects exposing `CD`, `CV`, `HEX`. `inference.py` needs no changes. Easiest path.
-- **Rewrite `interf0_handler()`.** Do whatever you want inside it — load your model, run inference, compute the three metrics — as long as it ends by writing the three `/output/*.json` files with float values.
-
-Whichever you pick, the only hard requirement is: **read the image from `/input`, write three floats to `/output`, exit 0.**
-
-> **Metric definitions must match the challenge.** CD, CV, and HEX are defined in [`code/src/utils/evaluate.py`](code/src/utils/evaluate.py) and in *The baseline pipeline* above. If you compute them yourself, keep the units identical (CD in cells/mm², CV as a ratio, HEX in [0, 1]) or your leaderboard score will be off even with perfect segmentation.
+> **Metric definitions must match the challenge.** CD, CV, and HEX are defined in [`code/src/utils/evaluate.py`](code/src/utils/evaluate.py) and in *The baseline pipeline* above. 
 
 ### 2. Bundle your model weights (offline!)
 
@@ -188,7 +180,7 @@ The container runs with **no internet**, so every weight file must be inside the
   RUN python -c "from cellpose import models; models.Cellpose(gpu=False, model_type='cyto')"
   ```
   which caches the weights into the image. Add an equivalent line for your model, or `COPY` a checkpoint you ship in the build context.
-- **Ship as a separate Model** (the `code/model/` directory → `model.tar.gz`, mounted at `/opt/ml/model`): use this for large checkpoints you upload once and reuse across algorithm versions. `do_save.sh` already packs `model/` into `model.tar.gz`; load from `/opt/ml/model` inside `inference.py`. See [`code/model/README.md`](code/model/README.md).
+- **Ship as a separate Model** (the `code/model/` directory → `model.tar.gz`, mounted at `/opt/ml/model`): use this for large checkpoints you upload once and reuse across algorithm versions. `do_save.sh` already packs `model/` into `model.tar.gz`; load from `/opt/ml/model` inside `inference.py`. 
 
 If your image tries to reach the network at run time, it will fail on the platform. **Test with `--network none` locally** (`do_test_run.sh` already does this).
 
