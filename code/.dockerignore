@@ -1,0 +1,34 @@
+# Keep the build context small and reproducible.
+results/
+results_mha/
+test/
+model/
+data/
+
+# Local dev / scratch
+*.tar.gz
+*.csv
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.tif
+*.tiff
+*.mha
+__pycache__/
+**/__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# VCS / editor
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local-only utilities; the container only needs inference.py + src/.
+main.py
+evaluate.py
+environment.yml

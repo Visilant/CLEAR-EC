@@ -46,6 +46,13 @@ def _load_mha(path: Path) -> np.ndarray:
     return arr
 
 
+def _load_mha_simpleitk(path: Path) -> np.ndarray:
+    """Read an MHA via SimpleITK — handles compressed/uncompressed/all dtypes."""
+    import SimpleITK  # imported lazily so non-MHA paths don't require it
+    img = SimpleITK.ReadImage(str(path))
+    return SimpleITK.GetArrayFromImage(img)
+
+
 def load_image(path: str | Path) -> np.ndarray:
     """
     Load an image from the given path and return it as a numpy RGB array.
@@ -55,7 +62,17 @@ def load_image(path: str | Path) -> np.ndarray:
     """
     path = Path(path)
     if path.suffix.lower() == ".mha":
-        arr = _load_mha(path)
+        # Prefer SimpleITK (handles compression and every dtype Grand Challenge
+        # might send). Fall back to the hand-rolled parser for environments
+        # without SimpleITK installed.
+        try:
+            arr = _load_mha_simpleitk(path)
+        except ImportError:
+            arr = _load_mha(path)
+        # 3D volumes from SimpleITK come back as (Z, Y, X); endothelial frames
+        # are single slice, so squeeze a leading singleton if present.
+        if arr.ndim == 3 and arr.shape[0] == 1:
+            arr = arr[0]
         # Cellpose downstream expects 3-channel RGB; replicate grayscale.
         if arr.ndim == 2:
             arr = np.stack([arr] * 3, axis=-1)
