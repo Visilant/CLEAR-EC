@@ -18,7 +18,12 @@ import numpy as np
 import pandas as pd
 import torch
 from cellpose import io
+from tqdm import tqdm
 
+from src.data.cache import open_image_cache
+from src.data.config import MetricConfig, SegConfig, config_hash
+from src.data.mask_cache import get_or_compute_mask, load_mask
+from src.data.metrics import metrics_from_mask
 from src.infer_cellpose_sam import get_segmentation
 
 
@@ -36,6 +41,70 @@ def set_seed(seed: int) -> None:
     torch.backends.cudnn.benchmark = False
 
 
+def run_from_cache(args) -> list[dict]:
+    """Run segmentation and/or metrics using the memmap cache."""
+    cache_dir = Path(args.cache_dir).expanduser().resolve()
+    memmap, index_df = open_image_cache(cache_dir)
+    indices = index_df["idx"].astype(int).tolist()
+    if args.limit:
+        indices = indices[: args.limit]
+
+    seg_config = SegConfig(
+        model_type=args.model_type,
+        diameter=args.diameter,
+        flow_threshold=args.flow_threshold,
+        cellprob_threshold=args.cellprob_threshold,
+        min_size=args.min_size,
+        tile=not args.no_tile,
+        net_avg=False,
+        batch_size=8,
+    )
+    metric_config = MetricConfig(
+        random_crop_frac=args.random_crop_frac,
+        random_crop_seed=args.seed,
+    )
+
+    predictions: list[dict] = []
+    model = None
+    seg_hash = args.from_masks or config_hash(seg_config)
+
+    if args.from_masks:
+        print(f"Loading cached masks from seg_hash={seg_hash}")
+    else:
+        from cellpose import models
+
+        model = models.Cellpose(gpu=True, model_type=seg_config.model_type)
+        print(f"Caching masks under seg_hash={seg_hash}")
+
+    for idx in tqdm(indices, desc="Cache pipeline"):
+        row = index_df.loc[index_df["idx"] == idx].iloc[0]
+        image_id = str(row["ID"])
+        image_gray = memmap[idx]
+
+        if args.from_masks:
+            masks_full = load_mask(cache_dir, seg_hash, idx)
+        else:
+            masks_full = get_or_compute_mask(
+                idx=idx,
+                image_gray=image_gray,
+                seg_config=seg_config,
+                model=model,
+                cache_dir=cache_dir,
+                skip_existing=True,
+            )
+
+        pred = metrics_from_mask(
+            masks_full,
+            image_gray,
+            image_id,
+            metric_config,
+        )
+        if pred is not None:
+            predictions.append({k: pred[k] for k in ("ID", "CD", "CV", "HEX")})
+
+    return predictions
+
+
 def main(args):
     io.logger_setup()
 
@@ -45,29 +114,33 @@ def main(args):
     os.makedirs(args.results_dir, exist_ok=True)
     os.makedirs(args.vis_output_dir, exist_ok=True)
 
-    data_dir = Path(args.data_dir).expanduser().resolve()
-    files = sorted(p for p in data_dir.iterdir() if p.suffix.lower() in (".tif", ".tiff", ".bmp", ".png", ".mha"))
-    if args.limit:
-        files = files[: args.limit]
-    print(f"Found {len(files)} images in {data_dir}")
+    if args.cache_dir:
+        print(f"Using memmap cache: {args.cache_dir}")
+        predictions = run_from_cache(args)
+    else:
+        data_dir = Path(args.data_dir).expanduser().resolve()
+        files = sorted(p for p in data_dir.iterdir() if p.suffix.lower() in (".tif", ".tiff", ".bmp", ".png", ".mha"))
+        if args.limit:
+            files = files[: args.limit]
+        print(f"Found {len(files)} images in {data_dir}")
 
-    print(f"Random crop fraction: {args.random_crop_frac} (seed={args.seed})")
+        print(f"Random crop fraction: {args.random_crop_frac} (seed={args.seed})")
 
-    predictions, _ = get_segmentation(
-        image_paths=files,
-        plotting=args.plot,
-        flow_threshold=args.flow_threshold,
-        cellprob_threshold=args.cellprob_threshold,
-        min_size=args.min_size,
-        model_type=args.model_type,
-        diameter=args.diameter,
-        annotations=None,
-        match_dots=False,
-        vis_output_dir=args.vis_output_dir,
-        random_crop_frac=args.random_crop_frac,
-        random_crop_seed=args.seed,
-        tile=not args.no_tile,
-    )
+        predictions, _ = get_segmentation(
+            image_paths=files,
+            plotting=args.plot,
+            flow_threshold=args.flow_threshold,
+            cellprob_threshold=args.cellprob_threshold,
+            min_size=args.min_size,
+            model_type=args.model_type,
+            diameter=args.diameter,
+            annotations=None,
+            match_dots=False,
+            vis_output_dir=args.vis_output_dir,
+            random_crop_frac=args.random_crop_frac,
+            random_crop_seed=args.seed,
+            tile=not args.no_tile,
+        )
 
     pred_df = pd.DataFrame(predictions)
 
@@ -125,6 +198,18 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Save segmentation overlay PNGs to --vis_output_dir.")
     parser.add_argument("--no_tile", action="store_true", default=False,
                         help="Disable Cellpose internal tiling and run whole-image inference (may OOM on large images).")
+    parser.add_argument(
+        "--cache_dir",
+        type=str,
+        default="",
+        help="If set, read images from memmap cache instead of --data_dir.",
+    )
+    parser.add_argument(
+        "--from_masks",
+        type=str,
+        default="",
+        help="Seg hash under cache/masks/; skip Cellpose (requires --cache_dir).",
+    )
 
     return parser
 

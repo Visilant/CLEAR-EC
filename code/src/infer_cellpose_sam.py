@@ -2,7 +2,6 @@
 Cellpose v1.0 inference module for corneal endothelial cell segmentation.
 """
 
-import hashlib
 import os
 import random
 from pathlib import Path
@@ -17,79 +16,27 @@ from tqdm import tqdm
 
 from cellpose import models, utils
 from cellpose.plot import mask_overlay
+from src.data.config import MetricConfig, SegConfig
+from src.data.crop import (
+    crop_and_relabel_masks,
+    crop_rng_for_image,
+    random_crop,
+    random_crop_bbox,
+)
+from src.data.metrics import metrics_from_mask
+from src.data.segment import segment_image
 from src.io_utils import load_image
-from src.utils.evaluate import calculate_metrics_from_masks
 
 
-def random_crop(image: np.ndarray, frac: float = 0.4, rng: random.Random = None):
-    """
-    Crop a random rectangular region of size (frac*H, frac*W) from `image`.
-    Returns (cropped_image, (x0, y0, x1, y1)) in image space.
-    """
-    if rng is None:
-        rng = random
-    h, w = image.shape[:2]
-    ch = max(1, int(h * frac))
-    cw = max(1, int(w * frac))
-    y0 = rng.randint(0, max(0, h - ch))
-    x0 = rng.randint(0, max(0, w - cw))
-    return image[y0 : y0 + ch, x0 : x0 + cw], (x0, y0, x0 + cw, y0 + ch)
-
-
-def random_crop_bbox(shape, frac: float, rng: random.Random = None):
-    """
-    Return a random crop bbox (x0, y0, x1, y1) of size (frac*H, frac*W) for an
-    image of the given `shape`. Same RNG semantics as `random_crop` so existing
-    seed-based reproducibility is preserved.
-    """
-    if rng is None:
-        rng = random
-    h, w = shape[:2]
-    ch = max(1, int(h * frac))
-    cw = max(1, int(w * frac))
-    y0 = rng.randint(0, max(0, h - ch))
-    x0 = rng.randint(0, max(0, w - cw))
-    return (x0, y0, x0 + cw, y0 + ch)
-
-
-def crop_rng_for_image(image: np.ndarray, base_seed) -> random.Random:
-    """Deterministic per-image RNG for the random crop.
-
-    The seed is derived from `base_seed` plus a hash of the image *content*, so
-    the same image always yields the same crop — independent of the filename and
-    of how many images were processed before it in this process. This keeps a
-    whole-folder local run (all images in one process, sharing one RNG) bit-for-
-    bit consistent with Grand Challenge, where every image is segmented in its
-    own fresh process re-seeded from scratch. When `base_seed` is None, fall back
-    to the shared module RNG (non-reproducible, legacy behaviour).
-    """
-    if base_seed is None:
-        return random
-    digest = hashlib.sha256(np.ascontiguousarray(image).tobytes()).hexdigest()
-    return random.Random(f"{base_seed}:{digest}")
-
-
-def crop_and_relabel_masks(masks: np.ndarray, bbox) -> np.ndarray:
-    """
-    Slice `masks` to `bbox` (x0, y0, x1, y1) and relabel surviving cells
-    contiguously from 1.
-
-    Cells that straddle the crop boundary are clipped — only the portion
-    inside the bbox is kept, with their original mask shape truncated.
-    Relabeling is required because `calculate_hexagonality` iterates with
-    `range(np.max(masks))`, which assumes contiguous labels 1..N.
-    """
-    x0, y0, x1, y1 = bbox
-    cropped = masks[y0:y1, x0:x1]
-
-    unique_labels = np.unique(cropped)
-    unique_labels = unique_labels[unique_labels > 0]
-
-    out = np.zeros_like(cropped)
-    for new_label, old_label in enumerate(unique_labels, start=1):
-        out[cropped == old_label] = new_label
-    return out
-
+# Backward-compatible re-exports for external callers.
+__all__ = [
+    "random_crop",
+    "random_crop_bbox",
+    "crop_rng_for_image",
+    "crop_and_relabel_masks",
+    "get_segmentation",
+    "visualize_segmentation",
+]
 
 def visualize_segmentation(
     image: np.ndarray,
@@ -231,6 +178,20 @@ def get_segmentation(
 
     # Initialize Cellpose v1.0 model (includes size model for diameter estimation)
     model = models.Cellpose(gpu=(device == "cuda"), model_type=model_type)
+    seg_config = SegConfig(
+        model_type=model_type,
+        diameter=diameter,
+        flow_threshold=flow_threshold,
+        cellprob_threshold=cellprob_threshold,
+        min_size=min_size,
+        tile=tile,
+        net_avg=False,
+        batch_size=batch_size,
+    )
+    metric_config = MetricConfig(
+        random_crop_frac=random_crop_frac,
+        random_crop_seed=random_crop_seed,
+    )
 
     for i in tqdm(range(len(image_paths)), desc="Cellpose v1.0 Segmentation"):
         pathname = image_paths[i]
@@ -238,11 +199,6 @@ def get_segmentation(
         image = load_image(pathname)  # lazy: decode just-in-time
         print(f"Processing image: {pathname.name}")
 
-        # Decide the crop bbox up front but DO NOT crop the image yet.
-        # Segmentation runs on the full image so cells near the crop boundary
-        # still benefit from full surrounding context. Metrics are restricted
-        # to cells whose centroid falls inside `crop_bbox` (handled after the
-        # model runs).
         stem = pathname.stem
         crop_bbox = None
         if random_crop_frac is not None:
@@ -263,29 +219,9 @@ def get_segmentation(
         else:
             processed_image = image
 
-        # Cellpose v1.0 expects a 2D grayscale image with channels=[0,0],
-        # or an RGB image with channels=[cyto_idx, nucleus_idx] (1=R, 2=G, 3=B).
-        # Endothelial frames are effectively grayscale, so collapse to 2D.
-        if processed_image.ndim == 3 and processed_image.shape[2] == 3:
-            eval_image = processed_image[..., 0]
-        else:
-            eval_image = processed_image
-        channels = [0, 0]
-
-        # Run Cellpose v1.0 — returns (masks, flows, styles, diams)
-        # net_avg=False uses only cytotorch_0 (single fold), ~4x faster than the 4-net ensemble.
         try:
-            masks, flows, styles, diams = model.eval(
-                eval_image,
-                diameter=diameter,
-                channels=channels,
-                batch_size=batch_size,
-                flow_threshold=flow_threshold,
-                cellprob_threshold=cellprob_threshold,
-                min_size=min_size,
-                net_avg=False,
-                tile=tile,
-            )
+            masks = segment_image(model, processed_image, seg_config)
+            flows = None
         except Exception as e:
             print(f"Error during model evaluation: {e}")
             continue
@@ -331,11 +267,9 @@ def get_segmentation(
                 masks = np.zeros_like(masks)
                 print("  matching: no cells or no dots, mask cleared")
 
-        # Keep the full segmentation for visualization (so the plot shows all
-        # detected cells across the entire image). Metrics use the literal
-        # cropped slice — cells that straddle the crop boundary are cut, and
-        # their partial shape is what contributes to CD / CV / HEX.
         masks_full = masks
+        image_id = pathname.stem
+
         if crop_bbox is not None:
             masks_metric = crop_and_relabel_masks(masks_full, crop_bbox)
             print(f"  cells (incl. partial) in cropped region: {int(masks_metric.max())} "
@@ -343,11 +277,13 @@ def get_segmentation(
         else:
             masks_metric = masks_full
 
-        # Calculate metrics on the cropped masks. Keep ID as the file stem so
-        # it can be matched against any ground-truth scheme (bmp / tiff /
-        # no-extension) downstream.
-        image_id = pathname.stem
-        prediction = calculate_metrics_from_masks(masks_metric, ID=image_id)
+        prediction = metrics_from_mask(
+            masks_full,
+            image,
+            image_id,
+            metric_config,
+            crop_bbox=crop_bbox,
+        )
 
         print(prediction)
 
