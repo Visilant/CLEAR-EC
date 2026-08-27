@@ -146,7 +146,7 @@ def calculate_hexagonality(masks):
 # =========================================================
 
 
-def evaluate_results(pred_df: pd.DataFrame, gt_df: pd.DataFrame):
+def evaluate_results(pred_df: pd.DataFrame, gt_df: pd.DataFrame, round_to: int | None = 1):
     """
     Merge predictions and ground-truth by ID, compute per-file percent errors
     for a set of numeric labels, and return both the per-file error DataFrame and
@@ -210,7 +210,8 @@ def evaluate_results(pred_df: pd.DataFrame, gt_df: pd.DataFrame):
 
         error_rows.append(row_err)
     error_df = pd.DataFrame(error_rows)
-    error_df = error_df.round(1)
+    if round_to is not None:
+        error_df = error_df.round(round_to)
     avg_series = error_df.drop(columns=["ID"], errors="ignore").mean(skipna=True)
     avg_percent_error_df = pd.DataFrame([avg_series])
 

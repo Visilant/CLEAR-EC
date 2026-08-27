@@ -88,7 +88,7 @@ def main(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CLEAR-EC: compare prediction CSV against ground truth.")
-    parser.add_argument("--split", type=str, default="test", choices=["train", "test"],
+    parser.add_argument("--split", type=str, default="test", choices=["train", "val", "test"],
                         help="Which CLEAR-EC split to evaluate. Sets default --predictions_csv / --gt_csv.")
     parser.add_argument("--predictions_csv", type=str, default='./results_mha/predictions_test.csv',
                         help="Path to predictions CSV (default: ./results_mha/predictions_<split>.csv).")

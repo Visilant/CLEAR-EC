@@ -44,6 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Rebuild even if cache already exists.",
     )
+    parser.add_argument(
+        "--force_cache",
+        action="store_true",
+        help="Alias for --force.",
+    )
     return parser
 
 
@@ -60,7 +65,7 @@ def main() -> None:
         labels_csv=labels_csv,
         cache_dir=cache_dir,
         seed=args.seed,
-        force=args.force,
+        force=args.force or args.force_cache,
         limit=limit,
         expected_count=9000 if limit is None else 0,
     )

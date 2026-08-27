@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import itertools
 import sys
 from pathlib import Path
 
@@ -17,7 +16,7 @@ from src.data.config import MetricConfig, config_hash
 from src.data.mask_cache import load_mask
 from src.data.metrics import metrics_from_mask
 from src.data.splits import load_split
-from src.utils.evaluate import evaluate_results
+from src.training.common import pred_artifact_path, score_by_id
 
 
 def _parse_float_list(value: str) -> list[float]:
@@ -75,9 +74,8 @@ def main() -> None:
             random_crop_seed=args.seed,
         )
         exp_hash = config_hash((args.seg_hash, metric_config))
-        preds_dir = cache_dir / "preds"
-        preds_dir.mkdir(parents=True, exist_ok=True)
-        out_csv = preds_dir / f"{exp_hash}.csv"
+        out_csv = pred_artifact_path(cache_dir, exp_hash, args.split)
+        out_csv.parent.mkdir(parents=True, exist_ok=True)
 
         rows = []
         for idx in indices:
@@ -98,13 +96,20 @@ def main() -> None:
         pred_df.to_csv(out_csv, index=False)
         print(f"Wrote {len(pred_df)} predictions -> {out_csv} (crop_frac={crop_frac})")
 
-        if gt_df is not None:
-            _, avg_error_df = evaluate_results(pred_df, gt_df)
-            if not avg_error_df.empty:
-                summary = {"crop_frac": crop_frac, "exp_hash": exp_hash}
-                for col in avg_error_df.columns:
-                    summary[col] = avg_error_df[col].iloc[0]
-                summary_rows.append(summary)
+        if gt_df is not None and not pred_df.empty:
+            scores = score_by_id(pred_df, gt_df)
+            summary_rows.append(
+                {
+                    "crop_frac": crop_frac,
+                    "exp_hash": exp_hash,
+                    "split": args.split,
+                    "n_preds": len(pred_df),
+                    "CD Error (%)": scores["CD"],
+                    "CV Error (%)": scores["CV"],
+                    "HEX Error (%)": scores["HEX"],
+                    "mean": scores["mean"],
+                }
+            )
 
     if summary_rows:
         summary_df = pd.DataFrame(summary_rows)
