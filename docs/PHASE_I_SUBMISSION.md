@@ -15,6 +15,8 @@ The branch is `submission/phase1-seed123`, checked out separately at `/home/visi
 
 Weights, images, labels and generated archives are intentionally not committed to Git. This branch's `AUDIT.md` describes the earlier seed-42 baseline; the candidate JSON and this document identify the new seed-123 submission.
 
+Upload `clear_ec_phase1_seed123.tar.gz` as the **container** (approximately 3.9 GiB), and `model_seed123.tar.gz` as the **model weights** (approximately 1.1 MiB). `SHA256SUMS` records their identities. The intermediate `container.tar` is not the upload artifact. The compressed container was converted to legacy Docker layout with every uncompressed layer checked against the original image's diff_id; the image configuration is unchanged.
+
 ## Account requirements and upload
 
 The user authorized submitting this candidate to **Phase I: Screening Phase (Preliminary Evaluation)**. No further approval of that action is needed, but account authentication is not configured in this environment.
