@@ -33,12 +33,13 @@ def _fit_ridge(
     y: np.ndarray,
     *,
     alpha: float,
+    fit_intercept: bool = True,
 ) -> np.ndarray:
     """Return coefficients including intercept as first element."""
     n, p = X.shape
     del n
     reg = np.eye(p)
-    if p > 0:
+    if p > 0 and fit_intercept:
         reg[0, 0] = 0.0  # do not penalize intercept
     xtx = X.T @ X + alpha * reg
     xty = X.T @ y
@@ -98,11 +99,11 @@ def fit_calibration(
         for j, metric in enumerate(METRICS):
             X = _design_matrix(preds[:, [j]], config.fit_intercept)
             y = gt_arr[:, j]
-            beta = _fit_ridge(X, y, alpha=config.alpha)
+            beta = _fit_ridge(X, y, alpha=config.alpha, fit_intercept=config.fit_intercept)
             coefs[metric] = beta.tolist()
     else:
         X = _design_matrix(preds, config.fit_intercept)
-        beta = _fit_ridge(X, gt_arr, alpha=config.alpha)
+        beta = _fit_ridge(X, gt_arr, alpha=config.alpha, fit_intercept=config.fit_intercept)
         coefs["joint"] = beta.tolist()
 
     return {
@@ -153,7 +154,7 @@ def _score_split(
     gt_role = role.merge(gt, on="ID", how="inner")
     if pred.empty or gt_role.empty:
         raise ValueError("Calibration scoring produced an empty split join.")
-    scores = score_by_id(pred, gt_role)
+    scores = score_by_id(pred, gt_role, expected_ids=role.ID)
     return pred, scores
 
 
@@ -179,6 +180,8 @@ def train_calibration(
 
     train_pred = _require_pred_csv(Path(pred_csv_train), "train")
     val_pred = _require_pred_csv(Path(pred_csv_val), "val")
+    score_by_id(train_pred, gt_df, expected_ids=index_df.loc[index_df.idx.isin(train_idx), "ID"])
+    score_by_id(val_pred, gt_df, expected_ids=index_df.loc[index_df.idx.isin(val_idx), "ID"])
 
     best: dict | None = None
     best_val = float("inf")
@@ -278,7 +281,7 @@ def evaluate_calibration_split(
 
     indices = load_split(cache_dir, split)
     gt_df = labels_for_indices(cache_dir, labels_csv, indices)
-    scores = score_by_id(calibrated, gt_df)
+    scores = score_by_id(calibrated, gt_df, expected_ids=gt_df.ID)
     metrics_path = results_dir / "metrics.json"
     metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
     metrics[f"{split}_mape"] = scores

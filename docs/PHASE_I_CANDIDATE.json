@@ -1,0 +1,19 @@
+{
+  "candidate": "SmallRegressionCNN BatchNorm seed 123",
+  "source_run": "round1_20260912_002113/batch/regression_cnn/seed_123",
+  "checkpoint_sha256": "a12a9709635fd8d937f00794ec289418895d3974c4fdf3f8e91ee1ca94d5421f",
+  "local_validation_mean": 11.955925705938531,
+  "container_validation": {
+    "CD": 11.332305489882893,
+    "CV": 13.422045970842431,
+    "HEX": 11.115731540853853,
+    "mean": 11.956694333859724
+  },
+  "n_validation": 892,
+  "container_batch_size": 1,
+  "container_pytorch": "2.1.2",
+  "tests_passed": 37,
+  "image_id": "sha256:a028322b6a26f93440b98ced617e850bba10175b7458b202e6d310d356f4cd8f",
+  "official_submission": null,
+  "test_evaluated_locally": false
+}

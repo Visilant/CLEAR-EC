@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.data.cache import open_image_cache
 from src.training.calibration import CalibrationConfig, train_calibration
-from src.training.common import resolve_path, split_summary
+from src.training.common import resolve_path, split_summary, update_manifest
 from src.training.regression_cnn import RegressionConfig, train_regression_cnn
 
 VALID_METHODS = ("regression", "calibration")
@@ -70,6 +70,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--cpu_threads", type=int, default=4)
+    parser.add_argument("--loss", choices=["huber", "mse"], default="huber")
+    parser.add_argument("--normalization", choices=["batch", "group"], default="batch")
+    parser.add_argument("--downsample", type=int, default=4)
+    parser.add_argument("--weight_decay", type=float, default=1e-5)
+    parser.add_argument("--amp", action="store_true")
+    parser.add_argument("--channels_last", action="store_true")
+    parser.add_argument("--float_inputs", action="store_true", help="Legacy FP32 CPU preprocessing")
     parser.add_argument(
         "--seeds",
         type=str,
@@ -142,6 +151,15 @@ def main() -> None:
                         lr=args.lr,
                         patience=args.patience,
                         seed=seed,
+                        num_workers=args.num_workers,
+                        cpu_threads=args.cpu_threads,
+                        loss=args.loss,
+                        normalization=args.normalization,
+                        downsample=args.downsample,
+                        weight_decay=args.weight_decay,
+                        amp=args.amp,
+                        channels_last=args.channels_last,
+                        uint8_inputs=not args.float_inputs,
                     )
                     train_regression_cnn(
                         cache_dir,
@@ -168,15 +186,9 @@ def main() -> None:
             errors[method] = str(exc)
             print(f"[{method}] ERROR: {exc}")
 
-    if manifest_path.exists():
-        with open(manifest_path) as f:
-            manifest = json.load(f)
-    manifest["errors"] = errors
-    manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
-    manifest["n_cached"] = n_cached
-    manifest["split_summary"] = summary
-    with open(manifest_path, "w") as f:
-        json.dump(manifest, f, indent=2)
+    update_manifest(results_root, {"errors": errors, "n_cached": n_cached,
+                    "split_summary": summary, "cache_dir": str(cache_dir),
+                    "labels_csv": str(labels_csv)})
 
     if errors:
         raise SystemExit(f"Training finished with errors: {errors}")

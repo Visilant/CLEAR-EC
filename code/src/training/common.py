@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import fcntl
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import pandas as pd
 from src.data.cache import open_image_cache
 from src.data.config import MetricConfig, SegConfig, config_hash
 from src.data.splits import ROLES, assert_protocol_splits, load_split, load_splits
+from src.artifacts import atomic_path
 
 METRICS = ("CD", "CV", "HEX")
 
@@ -40,9 +42,13 @@ def labels_for_indices(
     """Return rows with idx, ID, CD, CV, HEX for cache indices."""
     _, index_df = open_image_cache(cache_dir)
     labels_df = load_labels(labels_csv)
-    merged = index_df.merge(labels_df, on="ID", how="inner")
+    merged = index_df.merge(labels_df, on="ID", how="inner", validate="one_to_one")
     merged = merged[merged["idx"].astype(int).isin(indices)].copy()
     merged["idx"] = merged["idx"].astype(int)
+    if set(merged.idx) != set(indices):
+        raise ValueError("Labels do not cover every requested cache index")
+    if not np.isfinite(merged[list(METRICS)].to_numpy(dtype=float)).all():
+        raise ValueError("Labels contain non-finite targets")
     return merged.reset_index(drop=True)
 
 
@@ -100,16 +106,25 @@ def _normalize_id_frame(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def score_by_id(pred_df: pd.DataFrame, gt_df: pd.DataFrame) -> dict[str, float]:
+def score_by_id(pred_df: pd.DataFrame, gt_df: pd.DataFrame, *, expected_ids=None) -> dict[str, float]:
     """Join predictions to labels by ID, then compute full-precision MAPE."""
-    pred = _normalize_id_frame(pred_df)
-    gt = _normalize_id_frame(gt_df)
-    missing_pred = {"ID", *METRICS} - set(pred.columns)
-    missing_gt = {"ID", *METRICS} - set(gt.columns)
+    missing_pred = {"ID", *METRICS} - set(pred_df.columns)
+    missing_gt = {"ID", *METRICS} - set(gt_df.columns)
     if missing_pred:
         raise ValueError(f"Predictions missing columns: {missing_pred}")
     if missing_gt:
         raise ValueError(f"Labels missing columns: {missing_gt}")
+    pred = _normalize_id_frame(pred_df)
+    gt = _normalize_id_frame(gt_df)
+    for name, frame in (("Predictions", pred), ("Labels", gt)):
+        if frame.ID.duplicated().any():
+            raise ValueError(f"{name} contain duplicate IDs")
+        if not np.isfinite(frame[list(METRICS)].to_numpy(dtype=float)).all():
+            raise ValueError(f"{name} contain non-finite metric values")
+    if expected_ids is not None:
+        expected = {str(i).strip() for i in expected_ids}
+        if set(pred.ID) != expected or not expected.issubset(set(gt.ID)):
+            raise ValueError("Prediction/label coverage does not match expected IDs")
 
     merged = pred[["ID", *METRICS]].merge(
         gt[["ID", *METRICS]],
@@ -170,10 +185,11 @@ def experiment_hash(seg_config: SegConfig, metric_config: MetricConfig) -> str:
     return config_hash((config_hash(seg_config), metric_config))
 
 
-def pred_artifact_path(cache_dir: Path, exp_hash: str, split: str) -> Path:
+def pred_artifact_path(cache_dir: Path, exp_hash: str, split: str, *, limit: int = 0) -> Path:
     if split not in (*ROLES, "all"):
         raise ValueError(f"Unknown split for prediction artifact: {split}")
-    return Path(cache_dir) / "preds" / exp_hash / f"{split}.csv"
+    suffix = f".limit_{limit}" if limit > 0 else ""
+    return Path(cache_dir) / "preds" / exp_hash / f"{split}{suffix}.csv"
 
 
 def write_manifest(
@@ -183,22 +199,28 @@ def write_manifest(
     metrics: dict,
     extra: dict | None = None,
 ) -> None:
-    results_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = results_dir / "manifest.json"
-    if manifest_path.exists():
-        with open(manifest_path) as f:
-            manifest = json.load(f)
-    else:
-        manifest = {"created_at": datetime.now(timezone.utc).isoformat(), "methods": {}}
-
     entry = {"metrics": metrics, "updated_at": datetime.now(timezone.utc).isoformat()}
     if extra:
         entry.update(extra)
-    manifest["methods"][method] = entry
-    manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update_manifest(results_dir, {}, method_entry=(method, entry))
 
-    with open(manifest_path, "w") as f:
-        json.dump(manifest, f, indent=2)
+
+def update_manifest(results_dir: Path, fields: dict, *, method_entry=None) -> None:
+    """Serialize read/modify/write so independent GPU jobs cannot lose entries."""
+    results_dir = Path(results_dir)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = results_dir / "manifest.json"
+    with open(results_dir / ".manifest.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        manifest = (json.loads(manifest_path.read_text()) if manifest_path.exists() else
+                    {"created_at": datetime.now(timezone.utc).isoformat(), "methods": {}})
+        manifest.update(fields)
+        if method_entry:
+            method, entry = method_entry
+            manifest.setdefault("methods", {})[method] = entry
+        manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+        with atomic_path(manifest_path) as temporary:
+            temporary.write_text(json.dumps(manifest, indent=2))
 
 
 def split_summary(cache_dir: Path) -> dict[str, int]:

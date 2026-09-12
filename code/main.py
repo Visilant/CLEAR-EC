@@ -164,7 +164,7 @@ def main(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CLEAR-EC: segment cropped TIFFs and write per-sample predictions.")
-    parser.add_argument("--split", type=str, default="test", choices=["train", "test"],
+    parser.add_argument("--split", type=str, default="test", choices=["train", "val", "test"],
                         help="Label for this run; used to name the predictions CSV (predictions_<split>.csv).")
     parser.add_argument("--data_dir", type=str, default="/path/to/your_holdout_images",
                         help="Directory of input images to segment (e.g. a held-out split of the released training data).")

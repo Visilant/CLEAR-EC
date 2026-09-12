@@ -8,7 +8,6 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 
-from cellpose import models
 
 from src.data.cache import open_image_cache
 from src.data.config import SegConfig, config_hash
@@ -51,10 +50,21 @@ def run_segmentation_shard(
     from src.data.mask_cache import get_or_compute_mask
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    import torch
+    from cellpose import models
+    from src.data.mask_cache import mask_path
+    torch.set_num_threads(4)
 
     memmap, index_df = open_image_cache(cache_dir)
     seg_hash = config_hash(seg_config)
     shard_indices = [i for i in indices if i % num_shards == shard_id]
+    if skip_existing:
+        shard_indices = [i for i in shard_indices if not mask_path(cache_dir, seg_hash, i).exists()]
+    if not shard_indices:
+        print(f"GPU {gpu_id}: all shard masks are already cached")
+        return
+    if not torch.cuda.is_available():
+        raise RuntimeError(f"Requested GPU {gpu_id} is unavailable; refusing silent CPU fallback")
 
     model = models.Cellpose(gpu=True, model_type=seg_config.model_type)
     desc = f"GPU {gpu_id} shard {shard_id}/{num_shards}"

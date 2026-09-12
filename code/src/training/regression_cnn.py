@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from src.data.cache import open_image_cache
 from src.data.splits import load_split
+from src.artifacts import atomic_path
 from src.training.common import (
     METRICS,
     denormalize_targets,
@@ -37,6 +39,11 @@ class RegressionConfig:
     loss: str = "huber"  # huber | mse
     downsample: int = 4
     num_workers: int = 4
+    amp: bool = False
+    uint8_inputs: bool = True
+    cpu_threads: int = 4
+    channels_last: bool = False
+    normalization: str = "batch"
 
 
 class MetricRegressionDataset(Dataset):
@@ -45,18 +52,21 @@ class MetricRegressionDataset(Dataset):
         memmap: np.memmap,
         frame: pd.DataFrame,
         target_stats_dict: dict[str, dict[str, float]],
+        uint8_inputs: bool = True,
     ):
         self.memmap = memmap
         self.frame = frame.reset_index(drop=True)
         self.target_stats_dict = target_stats_dict
         self.targets = normalize_targets(self.frame, target_stats_dict)
+        self.indices = self.frame["idx"].to_numpy(dtype=np.int64)
+        self.uint8_inputs = uint8_inputs
 
     def __len__(self) -> int:
         return len(self.frame)
 
     def __getitem__(self, i: int) -> tuple[torch.Tensor, torch.Tensor, int]:
-        idx = int(self.frame.iloc[i]["idx"])
-        img = self.memmap[idx].astype(np.float32) / 255.0
+        idx = int(self.indices[i])
+        img = self.memmap[idx].copy() if self.uint8_inputs else self.memmap[idx].astype(np.float32) / 255.0
         x = torch.from_numpy(img).unsqueeze(0)
         y = torch.from_numpy(self.targets[i])
         return x, y, idx
@@ -65,23 +75,28 @@ class MetricRegressionDataset(Dataset):
 class SmallRegressionCNN(nn.Module):
     """Lightweight CNN for 972x1296 -> CD/CV/HEX (downsampled internally)."""
 
-    def __init__(self, downsample: int = 4):
+    def __init__(self, downsample: int = 4, normalization: str = "batch"):
         super().__init__()
+        if normalization not in ("batch", "group"):
+            raise ValueError(f"Unknown normalization: {normalization}")
+        def norm(channels: int) -> nn.Module:
+            return (nn.BatchNorm2d(channels) if normalization == "batch"
+                    else nn.GroupNorm(8, channels))
         self.downsample = downsample
         self.features = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=7, stride=2, padding=3),
-            nn.BatchNorm2d(32),
+            norm(32),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),
             nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2),
-            nn.BatchNorm2d(64),
+            norm(64),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2),
             nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(128),
+            norm(128),
             nn.ReLU(inplace=True),
             nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(128),
+            norm(128),
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d((1, 1)),
         )
@@ -94,6 +109,8 @@ class SmallRegressionCNN(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dtype == torch.uint8:
+            x = x.float().div_(255.0)
         if self.downsample > 1:
             x = nn.functional.interpolate(
                 x,
@@ -117,33 +134,50 @@ def _run_epoch(
     device: torch.device,
     stats: dict[str, dict[str, float]],
     optimizer: torch.optim.Optimizer | None = None,
+    scaler=None,
+    amp: bool = False,
 ) -> tuple[float, dict[str, float]]:
     train_mode = optimizer is not None
     model.train(train_mode)
-    total_loss = 0.0
-    n_batches = 0
-    preds_list: list[np.ndarray] = []
-    gt_list: list[np.ndarray] = []
+    total_loss = torch.zeros((), device=device)
+    n_images = 0
+    preds_list: list[torch.Tensor] = []
+    index_list: list[np.ndarray] = []
 
-    for x, y, _ in loader:
+    for x, y, indices in loader:
         x = x.to(device, non_blocking=True)
         y = y.to(device, non_blocking=True)
         if train_mode:
             optimizer.zero_grad(set_to_none=True)
         with torch.set_grad_enabled(train_mode):
-            pred = model(x)
-            loss = criterion(pred, y)
+            with torch.autocast(device_type=device.type, enabled=amp and device.type == "cuda"):
+                pred = model(x)
+                loss = criterion(pred, y)
             if train_mode:
-                loss.backward()
-                optimizer.step()
-        total_loss += float(loss.item())
-        n_batches += 1
-        preds_list.append(pred.detach().cpu().numpy())
-        gt_list.append(y.detach().cpu().numpy())
+                if scaler is not None and scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    optimizer.step()
+        total_loss += loss.detach() * len(x)
+        n_images += len(x)
+        preds_list.append(pred.detach().float())
+        index_list.append(indices.numpy())
 
-    avg_loss = total_loss / max(n_batches, 1)
-    preds = denormalize_targets(np.concatenate(preds_list, axis=0), stats)
-    gt = denormalize_targets(np.concatenate(gt_list, axis=0), stats)
+    if not n_images:
+        raise ValueError("Cannot run an epoch on an empty dataset")
+    avg_loss = float(total_loss.item()) / n_images
+    preds = denormalize_targets(torch.cat(preds_list).cpu().numpy(), stats)
+    # Never reconstruct ground truth from normalized float32 tensors: an exact
+    # zero HEX target can round-trip to ~6e-8 and turn MAPE into millions of %.
+    # Join original CSV targets in loader order so shuffle remains correct.
+    gt = loader.dataset.frame.set_index("idx").loc[
+        np.concatenate(index_list), list(METRICS)
+    ].to_numpy(dtype=float)
+    if not np.isfinite(avg_loss) or not np.isfinite(preds).all():
+        raise FloatingPointError("Non-finite training loss or predictions")
     return avg_loss, mape_per_metric(preds, gt)
 
 
@@ -155,8 +189,9 @@ def predict_indices(
     target_stats_dict: dict[str, dict[str, float]],
     device: torch.device,
     batch_size: int = 16,
+    uint8_inputs: bool = True,
 ) -> pd.DataFrame:
-    ds = MetricRegressionDataset(memmap, frame, target_stats_dict)
+    ds = MetricRegressionDataset(memmap, frame, target_stats_dict, uint8_inputs=uint8_inputs)
     loader = DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=0)
     model.eval()
     rows = []
@@ -181,10 +216,16 @@ def predict_indices(
     return pd.DataFrame(rows)
 
 
+def build_regression_model(cfg: RegressionConfig) -> nn.Module:
+    return SmallRegressionCNN(downsample=cfg.downsample, normalization=cfg.normalization)
+
+
 def _load_checkpoint(results_dir: Path, device: torch.device) -> tuple[nn.Module, dict, RegressionConfig]:
     ckpt = torch.load(results_dir / "best_model.pt", map_location=device, weights_only=False)
-    cfg = RegressionConfig(**ckpt["config"])
-    model = SmallRegressionCNN(downsample=cfg.downsample).to(device)
+    config = dict(ckpt["config"])
+    config.setdefault("uint8_inputs", False)  # Historical checkpoints used CPU float conversion.
+    cfg = RegressionConfig(**config)
+    model = build_regression_model(cfg).to(device)
     model.load_state_dict(ckpt["model_state"])
     return model, ckpt["target_stats"], cfg
 
@@ -201,6 +242,11 @@ def train_regression_cnn(
     cfg = config or RegressionConfig()
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
+    if (results_dir / "best_model.pt").exists():
+        raise FileExistsError(f"Checkpoint already exists in {results_dir}; use a new results_dir")
+    if cfg.epochs < 1 or cfg.batch_size < 1 or cfg.num_workers < 0 or cfg.cpu_threads < 1:
+        raise ValueError("Invalid training epochs/batch_size/num_workers/cpu_threads")
+    torch.set_num_threads(cfg.cpu_threads)
 
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -216,8 +262,8 @@ def train_regression_cnn(
     val_df = labels_for_indices(cache_dir, labels_csv, val_idx)
 
     stats = target_stats(train_df)
-    train_ds = MetricRegressionDataset(memmap, train_df, stats)
-    val_ds = MetricRegressionDataset(memmap, val_df, stats)
+    train_ds = MetricRegressionDataset(memmap, train_df, stats, cfg.uint8_inputs)
+    val_ds = MetricRegressionDataset(memmap, val_df, stats, cfg.uint8_inputs)
 
     train_loader = DataLoader(
         train_ds,
@@ -225,6 +271,7 @@ def train_regression_cnn(
         shuffle=True,
         num_workers=cfg.num_workers,
         pin_memory=device.type == "cuda",
+        persistent_workers=cfg.num_workers > 0,
     )
     val_loader = DataLoader(
         val_ds,
@@ -232,9 +279,13 @@ def train_regression_cnn(
         shuffle=False,
         num_workers=cfg.num_workers,
         pin_memory=device.type == "cuda",
+        persistent_workers=cfg.num_workers > 0,
     )
 
-    model = SmallRegressionCNN(downsample=cfg.downsample).to(device)
+    model = build_regression_model(cfg).to(device)
+    if cfg.channels_last:
+        model = model.to(memory_format=torch.channels_last)
+    scaler = torch.cuda.amp.GradScaler(enabled=cfg.amp and device.type == "cuda")
     criterion = _build_loss(cfg.loss)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay
@@ -246,12 +297,14 @@ def train_regression_cnn(
     history: list[dict] = []
 
     for epoch in range(1, cfg.epochs + 1):
+        epoch_start = time.perf_counter()
         train_loss, train_mape = _run_epoch(
-            model, train_loader, criterion, device, stats, optimizer
+            model, train_loader, criterion, device, stats, optimizer, scaler=scaler, amp=cfg.amp
         )
         val_loss, val_mape = _run_epoch(model, val_loader, criterion, device, stats)
         row = {
             "epoch": epoch,
+            "seconds": time.perf_counter() - epoch_start,
             "train_loss": train_loss,
             "val_loss": val_loss,
             **{f"train_mape_{k}": v for k, v in train_mape.items()},
@@ -261,38 +314,40 @@ def train_regression_cnn(
         print(
             f"[regression_cnn seed={cfg.seed}] epoch {epoch}/{cfg.epochs} "
             f"train_loss={train_loss:.4f} val_loss={val_loss:.4f} "
-            f"val_mape_mean={val_mape.get('mean', float('nan')):.2f}%"
+            f"val_mape_mean={val_mape.get('mean', float('nan')):.2f}%",
+            flush=True,
         )
 
         val_key = float(val_mape["mean"])
         if val_key < best_val:
             best_val = val_key
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            with atomic_path(results_dir / "best_model.pt") as temporary:
+                torch.save({"model_state": best_state, "target_stats": stats,
+                            "config": asdict(cfg), "epoch": epoch,
+                            "val_mape": val_mape}, temporary)
             stale = 0
         else:
             stale += 1
-            if stale >= cfg.patience:
-                print(f"[regression_cnn seed={cfg.seed}] early stop at epoch {epoch}")
-                break
+        with atomic_path(results_dir / "history.csv") as temporary:
+            pd.DataFrame(history).to_csv(temporary, index=False)
+        if stale >= cfg.patience:
+            print(f"[regression_cnn seed={cfg.seed}] early stop at epoch {epoch}")
+            break
 
     if best_state is not None:
         model.load_state_dict(best_state)
 
     ckpt_path = results_dir / "best_model.pt"
-    torch.save(
-        {
-            "model_state": model.state_dict(),
-            "target_stats": stats,
-            "config": asdict(cfg),
-        },
-        ckpt_path,
-    )
+    if best_state is None:
+        raise RuntimeError("No finite validation checkpoint was produced")
 
     pd.DataFrame(history).to_csv(results_dir / "history.csv", index=False)
 
-    val_pred = predict_indices(model, memmap, val_df, stats, device)
+    val_pred = predict_indices(model, memmap, val_df, stats, device, batch_size=cfg.batch_size,
+                               uint8_inputs=cfg.uint8_inputs)
     val_pred.to_csv(results_dir / "predictions_val.csv", index=False)
-    val_mape = score_by_id(val_pred, val_df)
+    val_mape = score_by_id(val_pred, val_df, expected_ids=val_df.ID)
 
     metrics = {
         "val_mape": val_mape,
@@ -328,9 +383,10 @@ def evaluate_regression_split(
     memmap, _ = open_image_cache(cache_dir)
     indices = load_split(cache_dir, split)
     frame = labels_for_indices(cache_dir, labels_csv, indices)
-    pred = predict_indices(model, memmap, frame, stats, device, batch_size=cfg.batch_size)
+    pred = predict_indices(model, memmap, frame, stats, device, batch_size=cfg.batch_size,
+                           uint8_inputs=cfg.uint8_inputs)
     pred.to_csv(Path(results_dir) / f"predictions_{split}.csv", index=False)
-    scores = score_by_id(pred, frame)
+    scores = score_by_id(pred, frame, expected_ids=frame.ID)
     metrics_path = Path(results_dir) / "metrics.json"
     metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
     metrics[f"{split}_mape"] = scores

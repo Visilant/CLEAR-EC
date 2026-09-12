@@ -52,10 +52,8 @@ def crop_and_relabel_masks(masks: np.ndarray, bbox) -> np.ndarray:
     x0, y0, x1, y1 = bbox
     cropped = masks[y0:y1, x0:x1]
 
-    unique_labels = np.unique(cropped)
-    unique_labels = unique_labels[unique_labels > 0]
-
-    out = np.zeros_like(cropped)
-    for new_label, old_label in enumerate(unique_labels, start=1):
-        out[cropped == old_label] = new_label
-    return out
+    # One pass through the crop instead of one scan per cell. Inserting zero
+    # preserves the background convention even if every pixel is foreground.
+    labels, inverse = np.unique(cropped, return_inverse=True)
+    offset = int(labels.size > 0 and labels[0] != 0)
+    return (inverse.reshape(cropped.shape) + offset).astype(masks.dtype)

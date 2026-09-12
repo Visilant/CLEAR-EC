@@ -14,7 +14,7 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -164,6 +164,8 @@ def git_state(repo: Path) -> dict:
 
 
 def _seg_config_cli(seg_config: SegConfig, batch_size: int) -> list[str]:
+    if batch_size != seg_config.batch_size:
+        raise ValueError("CLI batch size must match the hashed SegConfig")
     cmd = [
         "--model_type",
         seg_config.model_type,
@@ -195,6 +197,9 @@ class OvernightRunner:
         self.seg_gpu = args.seg_gpu
         self.train_gpu = args.train_gpu
         self.batch_size = args.batch_size
+        self.default_seg = replace(DEFAULT_SEG, batch_size=args.batch_size)
+        self.ablation_configs = [(name, replace(cfg, batch_size=args.batch_size))
+                                 for name, cfg in ABLATION_CONFIGS]
         self.epochs = args.epochs
         self.dry_run = args.dry_run
         self.skip_regression = args.skip_regression
@@ -203,7 +208,7 @@ class OvernightRunner:
         self._log_file = None
         self.python = sys.executable
         self.best_crop_frac = 0.4
-        self.best_seg_config = DEFAULT_SEG
+        self.best_seg_config = self.default_seg
         self.best_seg_name = "cyto_default"
         self.regression_proc: subprocess.Popen | None = None
         self.manifest: dict = {
@@ -329,7 +334,9 @@ class OvernightRunner:
             return None
         pred_df = pd.read_csv(pred_csv)
         gt_df = pd.read_csv(self.labels_csv)
-        return float(score_by_id(pred_df, gt_df)["mean"])
+        index = pd.read_csv(self.cache_dir / "index.csv")
+        expected = index.loc[index.idx.isin(load_split(self.cache_dir, split)), "ID"]
+        return float(score_by_id(pred_df, gt_df, expected_ids=expected)["mean"])
 
     def start_regression(self) -> None:
         if self.skip_regression:
@@ -378,9 +385,9 @@ class OvernightRunner:
         self.log("Regression arm finished.")
 
     def tune_baseline(self) -> None:
-        self._segment(DEFAULT_SEG, "val", "default cyto masks on val")
+        self._segment(self.default_seg, "val", "default cyto masks on val")
         self._sweep(
-            config_hash(DEFAULT_SEG),
+            config_hash(self.default_seg),
             CROP_SWEEP,
             "val",
             "crop sweep on val",
@@ -388,7 +395,7 @@ class OvernightRunner:
         best_crop = 0.4
         best_err = float("inf")
         for crop in CROP_SWEEP:
-            err = self._mean_error(DEFAULT_SEG, crop, "val")
+            err = self._mean_error(self.default_seg, crop, "val")
             self.manifest["configs"].append(
                 {
                     "name": f"crop_{crop:.2f}",
@@ -405,11 +412,11 @@ class OvernightRunner:
         self.log(f"Best crop on val: {best_crop} (mean {best_err:.2f}%)")
 
         candidates: list[tuple[str, SegConfig, float]] = []
-        default_err = self._mean_error(DEFAULT_SEG, best_crop, "val")
+        default_err = self._mean_error(self.default_seg, best_crop, "val")
         if default_err is not None:
-            candidates.append(("cyto_default", DEFAULT_SEG, default_err))
+            candidates.append(("cyto_default", self.default_seg, default_err))
 
-        for name, seg_config in ABLATION_CONFIGS:
+        for name, seg_config in self.ablation_configs:
             self._segment(seg_config, "val", f"ablation {name} masks on val")
             self._sweep(
                 config_hash(seg_config),
@@ -549,6 +556,8 @@ class OvernightRunner:
         self._run_cmd(cmd, phase="report", label="write REPORT.md")
 
     def run(self) -> None:
+        if self.manifest_path.exists():
+            raise FileExistsError(f"Run already exists at {self.results_dir}; choose a new --results_dir")
         self.results_dir.mkdir(parents=True, exist_ok=True)
         (self.results_dir / "logs").mkdir(parents=True, exist_ok=True)
         with open(self.log_path, "a") as log_file:

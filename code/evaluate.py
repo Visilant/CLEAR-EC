@@ -60,7 +60,7 @@ def main(args):
             print(f"{row['ID']:<30} {col:<10} {row[f'{col}_pred']:>10.2f} {row[f'{col}_gt']:>10.2f}")
         print()
 
-    errors_df, avg_error_df = evaluate_results(pred_df, gt_df)
+    errors_df, avg_error_df = evaluate_results(pred_df, gt_df, round_to=None)
 
     error_cols = [c for c in errors_df.columns if c != "ID"]
     if error_cols:
@@ -90,7 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CLEAR-EC: compare prediction CSV against ground truth.")
     parser.add_argument("--split", type=str, default="test", choices=["train", "val", "test"],
                         help="Which CLEAR-EC split to evaluate. Sets default --predictions_csv / --gt_csv.")
-    parser.add_argument("--predictions_csv", type=str, default='./results_mha/predictions_test.csv',
+    parser.add_argument("--predictions_csv", type=str, default=None,
                         help="Path to predictions CSV (default: ./results_mha/predictions_<split>.csv).")
     parser.add_argument("--gt_csv", type=str, default='/path/to/your_holdout_ground_truth.csv',
                         help="Path to ground-truth CSV with columns ID, CD, CV, HEX (build this from the released training data).")

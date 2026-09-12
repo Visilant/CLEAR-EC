@@ -38,12 +38,15 @@ def _load_mha(path: Path) -> np.ndarray:
 
     dim = fields["DimSize"].split()
     width, height = int(dim[0]), int(dim[1])
-    dtype = _MHA_DTYPE[fields["ElementType"]]
-    arr = np.frombuffer(raw, dtype=dtype).reshape(height, width).copy()
-
+    dtype = np.dtype(_MHA_DTYPE[fields["ElementType"]])
+    if fields.get("CompressedData", "False").lower() == "true":
+        raise ValueError("Compressed MHA requires SimpleITK")
     if fields.get("BinaryDataByteOrderMSB", "False").lower() == "true":
-        arr = arr.byteswap().newbyteorder()
-    return arr
+        dtype = dtype.newbyteorder(">")
+    else:
+        dtype = dtype.newbyteorder("<")
+    arr = np.frombuffer(raw, dtype=dtype).reshape(height, width).copy()
+    return arr.astype(dtype.newbyteorder("="), copy=False)
 
 
 def _load_mha_simpleitk(path: Path) -> np.ndarray:
