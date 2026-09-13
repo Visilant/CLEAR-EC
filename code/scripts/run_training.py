@@ -73,13 +73,33 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--cpu_threads", type=int, default=4)
     parser.add_argument("--loss", choices=["huber", "mse", "relative"], default="huber")
-    parser.add_argument("--model", choices=["small", "convnext_tiny"], default="small")
+    parser.add_argument("--model", type=str, default="small",
+                         help="small | convnext_tiny | timm:<name>")
     parser.add_argument("--input_mode", choices=["whole", "fixed", "quality"], default="whole")
     parser.add_argument("--no_pretrained", action="store_true")
     parser.add_argument("--context_height", type=int, default=486)
     parser.add_argument("--context_width", type=int, default=648)
     parser.add_argument("--patch_size", type=int, default=384)
     parser.add_argument("--augment_flips", action="store_true")
+    parser.add_argument("--ema", type=float, default=0.0, help="EMA decay (0 disables).")
+    parser.add_argument("--sched", choices=["none", "cosine"], default="none")
+    parser.add_argument("--sched_epochs", type=int, default=0,
+                        help="Cosine budget; hold its final LR for remaining training epochs.")
+    parser.add_argument("--save_epochs", type=str, default="",
+                        help="Comma-separated epochs to retain; also saves recovery state each epoch.")
+    parser.add_argument("--warmup_epochs", type=int, default=0)
+    parser.add_argument("--target_space", choices=["linear", "log"], default="linear")
+    parser.add_argument("--photometric", action="store_true")
+    parser.add_argument("--fold", type=int, default=-1)
+    parser.add_argument("--n_folds", type=int, default=0)
+    parser.add_argument("--all_data", action="store_true")
+    parser.add_argument("--antialias", action="store_true")
+    parser.add_argument("--drop_path", type=float, default=0.1)
+    parser.add_argument("--clip_grad", type=float, default=0.0)
+    parser.add_argument("--train_fraction", type=float, default=1.0)
+    parser.add_argument("--exclude_idx_file", type=str, default="")
+    parser.add_argument("--crop_scale", type=float, default=1.0,
+                        help="<1 enables scale-preserving random crops with this min side fraction.")
     parser.add_argument("--normalization", choices=["batch", "group"], default="batch")
     parser.add_argument("--downsample", type=int, default=4)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
@@ -174,6 +194,22 @@ def main() -> None:
                         context_width=args.context_width,
                         patch_size=args.patch_size,
                         augment_flips=args.augment_flips,
+                        ema=args.ema,
+                        sched=args.sched,
+                        sched_epochs=args.sched_epochs,
+                        save_epochs=tuple(int(e) for e in args.save_epochs.split(",") if e.strip()),
+                        warmup_epochs=args.warmup_epochs,
+                        target_space=args.target_space,
+                        photometric=args.photometric,
+                        fold=args.fold,
+                        n_folds=args.n_folds,
+                        all_data=args.all_data,
+                        crop_scale=args.crop_scale,
+                        antialias=args.antialias,
+                        drop_path=args.drop_path,
+                        clip_grad=args.clip_grad,
+                        train_fraction=args.train_fraction,
+                        exclude_idx_file=args.exclude_idx_file,
                     )
                     train_regression_cnn(
                         cache_dir,
