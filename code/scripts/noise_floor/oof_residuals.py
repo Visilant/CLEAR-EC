@@ -8,6 +8,8 @@ from __future__ import annotations
 import json, re, argparse
 from pathlib import Path
 import numpy as np, pandas as pd
+
+REPO = Path(__file__).resolve().parents[3]  # repository root
 from scipy import stats
 
 METS = ["CD", "CV", "HEX"]
@@ -53,10 +55,10 @@ def neighbours(num):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--oof", default="/home/visilant/CLEAR-EC/results/night_20260912/oof")
-    ap.add_argument("--labels", default="/home/visilant/CLEAR-EC/data/final_train_ids.csv")
-    ap.add_argument("--cache", default="/home/visilant/CLEAR-EC/data/cache")
-    ap.add_argument("--out", default="/home/visilant/CLEAR-EC/results/noise_floor_20260912")
+    ap.add_argument("--oof", default=str(REPO / "results/night_20260912/oof"))
+    ap.add_argument("--labels", default=str(REPO / "data/final_train_ids.csv"))
+    ap.add_argument("--cache", default=str(REPO / "data/cache"))
+    ap.add_argument("--out", default=str(REPO / "results/noise_floor_20260912"))
     args = ap.parse_args()
     out = Path(args.out); oof = Path(args.oof); rng = np.random.default_rng(0)
 

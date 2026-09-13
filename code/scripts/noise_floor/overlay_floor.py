@@ -1,13 +1,15 @@
 """A1/A2: counting-statistics and process-noise floor from the 25 annotated overlays.
 
-Reuses the Voronoi readout from spike/sam/reference_readout.py (copied verbatim, plus an
-`all_finite` option) and the parsed click sets in spike/sam/overlays.json.
+Reuses the Voronoi readout from code/phase2/detector/reference_readout.py (copied verbatim, plus an
+`all_finite` option) and the parsed click sets in results/sam_spike_20260912/overlays.json.
 Outputs A1_counting_floor.json, A2_oracle_floor.json, A2_cv_formulas.csv, per-image tables.
 """
 from __future__ import annotations
 import json, sys, argparse
 from pathlib import Path
 import numpy as np, pandas as pd
+
+REPO = Path(__file__).resolve().parents[3]  # repository root
 from scipy.spatial import Voronoi, ConvexHull, Delaunay, cKDTree
 
 UM = 0.7716049
@@ -122,9 +124,9 @@ def cv_candidates(cells_int, cells_all, pts):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--overlays", default="/home/visilant/CLEAR-EC/.worktrees/spike-sam/spike/sam/overlays.json")
-    ap.add_argument("--labels", default="/home/visilant/CLEAR-EC/data/final_train_ids.csv")
-    ap.add_argument("--out", default="/home/visilant/CLEAR-EC/results/noise_floor_20260912")
+    ap.add_argument("--overlays", default=str(REPO / "results/sam_spike_20260912/overlays.json"))
+    ap.add_argument("--labels", default=str(REPO / "data/final_train_ids.csv"))
+    ap.add_argument("--out", default=str(REPO / "results/noise_floor_20260912"))
     args = ap.parse_args()
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
     ov = json.load(open(args.overlays))
