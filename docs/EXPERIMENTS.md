@@ -1,6 +1,6 @@
 # CLEAR-EC experiment ledger
 
-Generated 2026-09-13 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 191 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
+Generated 2026-09-13 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 189 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
 
 Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is better). Splits: `oof9000` = every labelled image scored by the fold model that did not train on it (the compass); `val892` = the original slide-disjoint val split (best-epoch numbers there are optimistic); `platform100` = the hidden Phase I test set; `test906` = the August one-shot test split; `floor` = label-noise floors, not models.
 
@@ -152,7 +152,7 @@ Matched 8-epoch cosine prefix then constant LR; longer is slightly worse.
 
 ### 2026-09-12 Night of 2026-09-12: stabilized recipe, folds, refits, exploration
 
-`results/night_20260912`, report `results/night_20260912/REPORT.md`; 80 rows.
+`results/night_20260912`, report `results/night_20260912/REPORT.md`; 79 rows.
 EMA + cosine + fixed budget removed the epoch swings; ConvNeXt-V2-Tiny wins every fold; ten-model ensemble OOF 8.84 became slot 1.
 
 | run | model | seed | fold | epochs | split | n | CD | CV | HEX | mean | ci_low | ci_high | reference | status |
@@ -231,7 +231,6 @@ EMA + cosine + fixed budget removed the epoch swings; ConvNeXt-V2-Tiny wins ever
 | fold2 | convnext_tiny | 123 | 2 | 12/12 | fold-2/5 | 1802 | 6.9017 | 11.0915 | 10.4994 | 9.4975 |  |  |  | done |
 | fold2 [last+flips] |  |  |  | 12 | fold-2/5 | 1802 | 6.8839 | 11.1600 | 10.5110 | 9.5183 |  |  |  | scored |
 | fold2 [last+none] |  |  |  | 12 | fold-2/5 | 1802 | 6.9169 | 11.1645 | 10.5254 | 9.5356 |  |  |  | scored |
-| v2fold0_s42 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 42 | 0 | 8/8 | fold-0/5 | 1802 | 8.2821 | 10.9981 | 10.5613 | 9.9472 |  |  |  | done |
 | v2fold0_s42 [last+flips] |  |  |  | 8 | fold-0/5 | 1802 | 9.0941 | 11.4348 | 10.8562 | 10.4617 |  |  |  | scored |
 | refit_seed123 | convnext_tiny | 123 |  | 12/12 | none (all data) |  |  |  |  |  |  |  |  | no-val |
 | refit_seed42 | convnext_tiny | 42 |  | 12/12 | none (all data) |  |  |  |  |  |  |  |  | no-val |
@@ -337,15 +336,6 @@ Two-epoch small CNN through experiments/run.py; not a result.
 | cv1 | small | 1 | 1 | 2/2 | fold-1/2 | 4537 | 14.0932 | 14.3575 | 13.5755 | 14.0087 |  |  |  | done |
 | cv1 [last+none] |  |  |  | 2 | fold-1/2 | 4537 | 14.9437 | 14.0723 | 13.3794 | 14.1318 |  |  |  | scored |
 
-###  failed_run_20260827_125247
-
-`results/failed_run_20260827_125247`; 1 rows.
-
-
-| run | model | seed | fold | epochs | split | n | CD | CV | HEX | mean | ci_low | ci_high | reference | status |
-|---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
-| training |  | 42 |  | /30 | val892 |  |  |  |  |  |  |  |  | failed |
-
 ###  platform
 
 `platform`; 2 rows.
@@ -359,4 +349,19 @@ Two-epoch small CNN through experiments/run.py; not a result.
 ### 2026-08-26 Exploratory data analysis
 
 `results/eda`; no scored rows. Label distributions, image statistics, annotated-box vs random-crop overlap (IoU about 0.16), baseline error anatomy. No model rows; see results/eda/.
+
+## Removed artifacts
+
+| path | size | reason | date |
+|---|---|---|---|
+| results/failed_run_20260827_125247 | 3.5M | aborted first overnight attempt (dev_limit 1500), superseded by results/overnight | 2026-09-13 |
+| results/baseline | 4K | empty stub | 2026-09-13 |
+| results/training | 8K | empty stub | 2026-09-13 |
+| results/night_20260912/v2fold0_s42 | 213M | diverged seed-42 V2 run (val 9.95, spike at epoch 3); the clipped rerun v2fold0_s42_clip is kept | 2026-09-13 |
+| docker image clear_ec_audit:local | 12.7G | audit-era small-CNN container, superseded | 2026-09-13 |
+| docker image clear_ec_phase1:seed123 | 16.5G | small-CNN Phase I container, never submitted (tag phase1-seed123-unused keeps the commit) | 2026-09-13 |
+| /home/visilant/CLEAR-EC-phase1-seed123 | 7.6G | worktree of the unused seed123 submission (container.tar and archives); commit kept by tag phase1-seed123-unused | 2026-09-13 |
+| .worktrees/spike-sam | 6.2G | spike worktree (its own .venv and 358M of detector weights; re-create with code/phase2/detector/download_weights.sh); code merged, results copied to results/sam_spike_20260912 | 2026-09-13 |
+| .worktrees/regression-night, .worktrees/feature/training-viewer | 2M | merged (night) or superseded (viewer copy older than code/viewer) | 2026-09-13 |
+| branches fair-overnight-experiments, night/regression-levers, spike/sam-detector, feature/training-viewer, submission/phase1-seed123 |  | merged into main or preserved by tag | 2026-09-13 |
 

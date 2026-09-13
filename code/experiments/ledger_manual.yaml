@@ -76,4 +76,14 @@ verdicts:  # levers tested; joined to rows by glob on "<campaign>/<run>" (docs/H
     verdict: "Cellpose 'cyto' outputs correlate 0.2 to 0.3 with GT CD; ridge (14.8) and the constant (14.2) beat it; superseded by direct regression"
     do_not_rerun: true
 
-deleted: []  # appended by the 2026-09-13 cleanup: {path, size, reason}
+deleted:  # 2026-09-13 cleanup (code/experiments/cleanup_20260913.sh and git worktree removal)
+  - {path: results/failed_run_20260827_125247, size: 3.5M, reason: "aborted first overnight attempt (dev_limit 1500), superseded by results/overnight", date: "2026-09-13"}
+  - {path: results/baseline, size: 4K, reason: "empty stub", date: "2026-09-13"}
+  - {path: results/training, size: 8K, reason: "empty stub", date: "2026-09-13"}
+  - {path: results/night_20260912/v2fold0_s42, size: 213M, reason: "diverged seed-42 V2 run (val 9.95, spike at epoch 3); the clipped rerun v2fold0_s42_clip is kept", date: "2026-09-13"}
+  - {path: "docker image clear_ec_audit:local", size: 12.7G, reason: "audit-era small-CNN container, superseded", date: "2026-09-13"}
+  - {path: "docker image clear_ec_phase1:seed123", size: 16.5G, reason: "small-CNN Phase I container, never submitted (tag phase1-seed123-unused keeps the commit)", date: "2026-09-13"}
+  - {path: /home/visilant/CLEAR-EC-phase1-seed123, size: 7.6G, reason: "worktree of the unused seed123 submission (container.tar and archives); commit kept by tag phase1-seed123-unused", date: "2026-09-13"}
+  - {path: .worktrees/spike-sam, size: 6.2G, reason: "spike worktree (its own .venv and 358M of detector weights; re-create with code/phase2/detector/download_weights.sh); code merged, results copied to results/sam_spike_20260912", date: "2026-09-13"}
+  - {path: ".worktrees/regression-night, .worktrees/feature/training-viewer", size: 2M, reason: "merged (night) or superseded (viewer copy older than code/viewer)", date: "2026-09-13"}
+  - {path: "branches fair-overnight-experiments, night/regression-levers, spike/sam-detector, feature/training-viewer, submission/phase1-seed123", size: "", reason: "merged into main or preserved by tag", date: "2026-09-13"}
