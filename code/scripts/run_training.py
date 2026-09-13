@@ -1,22 +1,47 @@
 #!/usr/bin/env python3
-"""Run CLEAR-EC training arms: regression CNN and ridge calibration."""
+"""Train one regression run (or one per seed) from CLI flags or a JSON config.
+
+The runner (experiments/run.py) passes --config_json <job>/config.json so the RegressionConfig
+travels as data; the flag form below is generated from the dataclass fields for humans.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from dataclasses import fields
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.data.cache import open_image_cache
-from src.training.calibration import CalibrationConfig, train_calibration
 from src.training.common import resolve_path, split_summary, update_manifest
-from src.training.regression_cnn import RegressionConfig, train_regression_cnn
+from src.training.config import RegressionConfig
+from src.training.train import train_regression_cnn
 
-VALID_METHODS = ("regression", "calibration")
+VALID_METHODS = ("regression",)
+# Fields whose CLI flag is the negation of the field (defaults are True).
+INVERTED_FLAGS = {"pretrained": "no_pretrained", "uint8_inputs": "float_inputs"}
+# Fields not exposed as flags: seed comes from --seeds, architecture (NAS) was removed.
+SKIPPED_FIELDS = {"seed", "architecture"}
+CHOICES = {
+    "loss": ["huber", "mse", "relative"],
+    "input_mode": ["whole", "fixed", "quality"],
+    "sched": ["none", "cosine"],
+    "target_space": ["linear", "log"],
+    "normalization": ["batch", "group"],
+}
+HELP = {
+    "model": "small | convnext_tiny | convnext_small | convnext_base | timm:<name>",
+    "ema": "EMA decay (0 disables).",
+    "sched_epochs": "Cosine budget; hold its final LR for remaining training epochs.",
+    "save_epochs": "Comma-separated epochs to retain; also saves recovery state each epoch.",
+    "crop_scale": "<1 enables scale-preserving random crops with this min side fraction.",
+    "clip_grad": "Gradient-norm clipping (0 disables). Use 1.0 for ConvNeXt-V2.",
+    "exclude_idx_file": "Whitespace-separated cache indices dropped from training only.",
+    "float_inputs": "Legacy FP32 CPU preprocessing (default: uint8 inputs).",
+}
 
 
 def parse_methods(value: str) -> list[str]:
@@ -25,10 +50,8 @@ def parse_methods(value: str) -> list[str]:
         raise SystemExit("No training methods specified.")
     unknown = [item for item in methods if item not in VALID_METHODS]
     if unknown:
-        raise SystemExit(
-            f"Unknown or removed method(s): {unknown}. "
-            f"Valid: {', '.join(VALID_METHODS)}"
-        )
+        raise SystemExit(f"Unknown or removed method(s): {unknown}. Valid: {', '.join(VALID_METHODS)} "
+                         "(ridge calibration lives in code/legacy/).")
     return methods
 
 
@@ -38,92 +61,49 @@ def _method_arg(value: str) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CLEAR-EC training pipeline CLI.")
-    parser.add_argument(
-        "--method",
-        type=_method_arg,
-        default="regression",
-        help="Comma-separated methods: regression,calibration",
-    )
-    parser.add_argument("--gpu", type=int, default=1, help="GPU for regression.")
+    parser = argparse.ArgumentParser(description="CLEAR-EC regression training.")
+    parser.add_argument("--method", type=_method_arg, default="regression", help="regression (only)")
+    parser.add_argument("--config_json", type=str, default="",
+                        help="JSON file with a 'config' object (asdict(RegressionConfig)); overrides every flag below.")
+    parser.add_argument("--gpu", type=int, default=0, help="CUDA device index (after CUDA_VISIBLE_DEVICES).")
     parser.add_argument("--cache_dir", type=str, default="../data/cache")
     parser.add_argument("--labels_csv", type=str, default="../data/final_train_ids.csv")
-    parser.add_argument(
-        "--results_dir",
-        type=str,
-        default="../results/training",
-        help="Root for per-method outputs and manifest.json.",
-    )
-    parser.add_argument(
-        "--pred_csv_train",
-        type=str,
-        default="",
-        help="Frozen Cellpose train-split predictions for calibration.",
-    )
-    parser.add_argument(
-        "--pred_csv_val",
-        type=str,
-        default="",
-        help="Frozen Cellpose val-split predictions for calibration.",
-    )
-    parser.add_argument("--epochs", type=int, default=30)
-    parser.add_argument("--batch_size", type=int, default=8)
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--patience", type=int, default=5)
-    parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--cpu_threads", type=int, default=4)
-    parser.add_argument("--loss", choices=["huber", "mse", "relative"], default="huber")
-    parser.add_argument("--model", type=str, default="small",
-                         help="small | convnext_tiny | timm:<name>")
-    parser.add_argument("--input_mode", choices=["whole", "fixed", "quality"], default="whole")
-    parser.add_argument("--no_pretrained", action="store_true")
-    parser.add_argument("--context_height", type=int, default=486)
-    parser.add_argument("--context_width", type=int, default=648)
-    parser.add_argument("--patch_size", type=int, default=384)
-    parser.add_argument("--augment_flips", action="store_true")
-    parser.add_argument("--ema", type=float, default=0.0, help="EMA decay (0 disables).")
-    parser.add_argument("--sched", choices=["none", "cosine"], default="none")
-    parser.add_argument("--sched_epochs", type=int, default=0,
-                        help="Cosine budget; hold its final LR for remaining training epochs.")
-    parser.add_argument("--save_epochs", type=str, default="",
-                        help="Comma-separated epochs to retain; also saves recovery state each epoch.")
-    parser.add_argument("--warmup_epochs", type=int, default=0)
-    parser.add_argument("--target_space", choices=["linear", "log"], default="linear")
-    parser.add_argument("--photometric", action="store_true")
-    parser.add_argument("--fold", type=int, default=-1)
-    parser.add_argument("--n_folds", type=int, default=0)
-    parser.add_argument("--all_data", action="store_true")
-    parser.add_argument("--antialias", action="store_true")
-    parser.add_argument("--drop_path", type=float, default=0.1)
-    parser.add_argument("--clip_grad", type=float, default=0.0)
-    parser.add_argument("--train_fraction", type=float, default=1.0)
-    parser.add_argument("--exclude_idx_file", type=str, default="")
-    parser.add_argument("--crop_scale", type=float, default=1.0,
-                        help="<1 enables scale-preserving random crops with this min side fraction.")
-    parser.add_argument("--normalization", choices=["batch", "group"], default="batch")
-    parser.add_argument("--downsample", type=int, default=4)
-    parser.add_argument("--weight_decay", type=float, default=1e-5)
-    parser.add_argument("--amp", action="store_true")
-    parser.add_argument("--channels_last", action="store_true")
-    parser.add_argument("--float_inputs", action="store_true", help="Legacy FP32 CPU preprocessing")
-    parser.add_argument(
-        "--seeds",
-        type=str,
-        default="42",
-        help="Comma-separated regression seeds (default: 42).",
-    )
-    parser.add_argument(
-        "--min_cache_count",
-        type=int,
-        default=9000,
-        help="Require at least this many cached images to start training.",
-    )
+    parser.add_argument("--results_dir", type=str, default="../results/training",
+                        help="Root for regression_cnn/seed_<s>/ outputs and manifest.json.")
+    parser.add_argument("--seeds", type=str, default="42", help="Comma-separated seeds (default: 42).")
+    parser.add_argument("--min_cache_count", type=int, default=9000,
+                        help="Warn if fewer cached images than this.")
+    group = parser.add_argument_group("RegressionConfig fields")
+    for f in fields(RegressionConfig):
+        if f.name in SKIPPED_FIELDS:
+            continue
+        if f.name in INVERTED_FLAGS:
+            flag = INVERTED_FLAGS[f.name]
+            group.add_argument(f"--{flag}", action="store_true", help=HELP.get(flag, f"Disable {f.name}."))
+            continue
+        if f.name == "save_epochs":
+            group.add_argument("--save_epochs", type=str, default="", help=HELP["save_epochs"])
+            continue
+        if isinstance(f.default, bool):
+            group.add_argument(f"--{f.name}", action="store_true", help=HELP.get(f.name, ""))
+            continue
+        group.add_argument(f"--{f.name}", type=type(f.default), default=f.default,
+                           choices=CHOICES.get(f.name), help=HELP.get(f.name, f"default {f.default}"))
     return parser
 
 
-def _cache_count(cache_dir: Path) -> int:
-    _, index_df = open_image_cache(cache_dir)
-    return len(index_df)
+def config_from_args(args: argparse.Namespace, seed: int) -> RegressionConfig:
+    values: dict = {}
+    for f in fields(RegressionConfig):
+        if f.name in SKIPPED_FIELDS:
+            continue
+        if f.name in INVERTED_FLAGS:
+            values[f.name] = not getattr(args, INVERTED_FLAGS[f.name])
+        elif f.name == "save_epochs":
+            values[f.name] = tuple(int(e) for e in args.save_epochs.split(",") if e.strip())
+        else:
+            values[f.name] = getattr(args, f.name)
+    return RegressionConfig(seed=seed, **values)
 
 
 def _parse_seeds(value: str) -> list[int]:
@@ -135,111 +115,37 @@ def _parse_seeds(value: str) -> list[int]:
 
 def main() -> None:
     args = build_parser().parse_args()
+    parse_methods(args.method)
     code_root = Path(__file__).resolve().parents[1]
     cache_dir = resolve_path(code_root, args.cache_dir)
     labels_csv = resolve_path(code_root, args.labels_csv)
     results_root = resolve_path(code_root, args.results_dir)
     results_root.mkdir(parents=True, exist_ok=True)
 
-    n_cached = _cache_count(cache_dir)
+    _, index_df = open_image_cache(cache_dir)
+    n_cached = len(index_df)
     summary = split_summary(cache_dir)
     print(f"Cache: {n_cached} images | splits: {summary}")
-
     if n_cached < args.min_cache_count:
-        print(
-            f"WARNING: cache has {n_cached} images (< {args.min_cache_count}). "
-            "Training will still run for smoke testing."
-        )
+        print(f"WARNING: cache has {n_cached} images (< {args.min_cache_count}). Training will still run.")
 
-    methods = parse_methods(args.method)
-    seeds = _parse_seeds(args.seeds)
-
-    manifest_path = results_root / "manifest.json"
-    if manifest_path.exists():
-        with open(manifest_path) as f:
-            manifest = json.load(f)
+    if args.config_json:
+        payload = json.loads(Path(args.config_json).read_text())
+        configs = [RegressionConfig(**payload["config"])]
     else:
-        manifest = {
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "cache_dir": str(cache_dir),
-            "labels_csv": str(labels_csv),
-            "split_summary": summary,
-            "methods": {},
-        }
+        configs = [config_from_args(args, seed) for seed in _parse_seeds(args.seeds)]
 
     errors: dict[str, str] = {}
-    for method in methods:
+    for cfg in configs:
+        run_dir = results_root / "regression_cnn" / f"seed_{cfg.seed}"
         try:
-            if method == "regression":
-                for seed in seeds:
-                    cfg = RegressionConfig(
-                        epochs=args.epochs,
-                        batch_size=args.batch_size,
-                        lr=args.lr,
-                        patience=args.patience,
-                        seed=seed,
-                        num_workers=args.num_workers,
-                        cpu_threads=args.cpu_threads,
-                        loss=args.loss,
-                        normalization=args.normalization,
-                        downsample=args.downsample,
-                        weight_decay=args.weight_decay,
-                        amp=args.amp,
-                        channels_last=args.channels_last,
-                        uint8_inputs=not args.float_inputs,
-                        model=args.model,
-                        input_mode=args.input_mode,
-                        pretrained=not args.no_pretrained,
-                        context_height=args.context_height,
-                        context_width=args.context_width,
-                        patch_size=args.patch_size,
-                        augment_flips=args.augment_flips,
-                        ema=args.ema,
-                        sched=args.sched,
-                        sched_epochs=args.sched_epochs,
-                        save_epochs=tuple(int(e) for e in args.save_epochs.split(",") if e.strip()),
-                        warmup_epochs=args.warmup_epochs,
-                        target_space=args.target_space,
-                        photometric=args.photometric,
-                        fold=args.fold,
-                        n_folds=args.n_folds,
-                        all_data=args.all_data,
-                        crop_scale=args.crop_scale,
-                        antialias=args.antialias,
-                        drop_path=args.drop_path,
-                        clip_grad=args.clip_grad,
-                        train_fraction=args.train_fraction,
-                        exclude_idx_file=args.exclude_idx_file,
-                    )
-                    train_regression_cnn(
-                        cache_dir,
-                        labels_csv,
-                        results_root / "regression_cnn" / f"seed_{seed}",
-                        gpu=args.gpu,
-                        config=cfg,
-                    )
-            elif method == "calibration":
-                if not args.pred_csv_train or not args.pred_csv_val:
-                    raise FileNotFoundError(
-                        "Calibration requires --pred_csv_train and --pred_csv_val "
-                        "from the frozen Cellpose config."
-                    )
-                train_calibration(
-                    cache_dir,
-                    labels_csv,
-                    results_root / "calibration",
-                    pred_csv_train=resolve_path(code_root, args.pred_csv_train),
-                    pred_csv_val=resolve_path(code_root, args.pred_csv_val),
-                    config=CalibrationConfig(),
-                )
-        except Exception as exc:
-            errors[method] = str(exc)
-            print(f"[{method}] ERROR: {exc}")
+            train_regression_cnn(cache_dir, labels_csv, run_dir, gpu=args.gpu, config=cfg)
+        except Exception as exc:  # keep going for the other seeds, report at the end
+            errors[f"seed_{cfg.seed}"] = str(exc)
+            print(f"[seed {cfg.seed}] ERROR: {exc}")
 
-    update_manifest(results_root, {"errors": errors, "n_cached": n_cached,
-                    "split_summary": summary, "cache_dir": str(cache_dir),
-                    "labels_csv": str(labels_csv)})
-
+    update_manifest(results_root, {"errors": errors, "n_cached": n_cached, "split_summary": summary,
+                                   "cache_dir": str(cache_dir), "labels_csv": str(labels_csv)})
     if errors:
         raise SystemExit(f"Training finished with errors: {errors}")
     print(f"Training complete -> {results_root}")

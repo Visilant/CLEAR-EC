@@ -49,6 +49,10 @@ class RegressionConfig:
     exclude_idx_file: str = ""  # whitespace-separated cache indices dropped from TRAINING only (label-cleaning runs)
     crop_scale: float = 1.0  # <1 enables scale-preserving random crops (min side fraction) in training
 
+    def __post_init__(self) -> None:
+        # JSON transport (config.json, checkpoints) turns the tuple into a list; normalise it back.
+        self.save_epochs = tuple(int(e) for e in (self.save_epochs or ()))
+
 
 # Fields that identify a particular run rather than the recipe it follows.
 RUN_IDENTITY_FIELDS = ("seed", "fold", "n_folds", "all_data", "num_workers", "cpu_threads")

@@ -1,0 +1,23 @@
+# Runner smoke test: small CNN, two epochs, 5% of the training slides. Finishes in about a minute
+# on one GPU and exercises split arms, fold arms, scoring, an OOF ensemble and a paired comparison.
+name: smoke
+results_dir: results/smoke_runner
+gpus: [0]
+concurrent_per_gpu: 2
+base:
+  model: small
+  epochs: 2
+  batch_size: 16
+  num_workers: 0
+  train_fraction: 0.05
+  patience: 0
+  loss: relative
+arms:
+  - {name: split, seeds: [1]}
+  - {name: cv, seeds: [1], n_folds: 2, folds: [0, 1]}
+post:
+  score: {which: last, tta: none}
+  ensembles:
+    - {name: cv_oof, members: {cv: 1}}
+  compare:
+    - {candidate: cv_oof, reference: split, n_boot: 200}

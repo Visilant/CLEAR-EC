@@ -1,0 +1,30 @@
+# ConvNeXt-Tiny (torchvision) members of the submitted ensemble: same recipe as the V2 spec with a
+# 12-epoch budget (Tiny plateaus later) and no gradient clipping (never needed for Tiny).
+name: night_tiny_5fold
+results_dir: results/night_tiny_5fold
+cache_dir: data/cache
+labels_csv: data/final_train_ids.csv
+gpus: [0, 1]
+concurrent_per_gpu: 1
+base:
+  model: convnext_tiny
+  input_mode: whole
+  loss: relative
+  batch_size: 8
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+  amp: true
+  channels_last: true
+  augment_flips: true
+  ema: 0.999
+  sched: cosine
+  warmup_epochs: 1
+  epochs: 12
+  patience: 0
+arms:
+  - {name: fold, seeds: [123], n_folds: 5, folds: [0, 1, 2, 3, 4]}
+  - {name: refit, seeds: [123, 42], all_data: true}
+post:
+  score: {which: last, tta: flips}
+  ensembles:
+    - {name: tiny_oof, members: {fold: 1}}

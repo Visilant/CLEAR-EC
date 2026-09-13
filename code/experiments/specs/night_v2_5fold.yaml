@@ -1,0 +1,32 @@
+# The recipe behind the submitted ensemble (results/night_20260912, V2 members): ConvNeXt-V2-Tiny,
+# EMA 0.999 + cosine, fixed 8 epochs, last checkpoint, slide-grouped 5-fold over all 9,000 images.
+# clip_grad 1.0 was added after the seed-123 folds ran (seed-42 V2 runs spiked at epoch 3 without it).
+name: night_v2_5fold
+results_dir: results/night_v2_5fold
+cache_dir: data/cache
+labels_csv: data/final_train_ids.csv
+gpus: [0, 1]
+concurrent_per_gpu: 1
+base:
+  model: timm:convnextv2_tiny.fcmae_ft_in22k_in1k
+  input_mode: whole
+  loss: relative
+  batch_size: 8
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+  amp: true
+  channels_last: true
+  augment_flips: true
+  ema: 0.999
+  sched: cosine
+  warmup_epochs: 1
+  epochs: 8
+  patience: 0
+  clip_grad: 1.0
+arms:
+  - {name: v2fold, seeds: [123], n_folds: 5, folds: [0, 1, 2, 3, 4]}
+  - {name: v2refit, seeds: [123, 7], all_data: true}
+post:
+  score: {which: last, tta: flips}
+  ensembles:
+    - {name: v2_oof, members: {v2fold: 1}}

@@ -202,8 +202,10 @@ class TrainingCliTests(unittest.TestCase):
         from scripts import run_training
 
         parser = run_training.build_parser()
-        args = parser.parse_args(["--method", "regression,calibration"])
-        self.assertEqual(run_training.parse_methods(args.method), ["regression", "calibration"])
+        args = parser.parse_args(["--method", "regression"])
+        self.assertEqual(run_training.parse_methods(args.method), ["regression"])
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["--method", "regression,calibration"])  # calibration moved to code/legacy
         with self.assertRaises(SystemExit):
             parser.parse_args(["--method", "pseudo"])
         with self.assertRaises(SystemExit):
