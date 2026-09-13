@@ -34,7 +34,7 @@ rows:  # facts that exist nowhere in machine-readable form
     verdict: "Best team score at the first snapshot (idea.md); others 8.7452, 8.7720, 8.7843, 8.9145."
     path: idea.md
 
-verdicts:  # levers tested; joined to rows by glob on "<campaign>/<run>" (research_handoff section 4, 2026-09-12)
+verdicts:  # levers tested; joined to rows by glob on "<campaign>/<run>" (docs/HANDOFF_2026-09-12.md section 4)
   - lever: "Label cleaning (drop top-2 percent flagged from training)"
     runs: ["noise_floor_20260912/b1_*"]
     verdict: "fails the 0.10 gate: delta -0.028 (CI -0.087 to +0.030) on 1,802 held-out images; test labels carry the same noise"

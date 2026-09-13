@@ -12,6 +12,17 @@ The baseline is a transparent starting point: not the strongest possible solutio
 
 ---
 
+## Research workflow (this fork)
+
+This fork replaced the Cellpose baseline below with direct regression on ImageNet-pretrained
+ConvNeXt backbones (Phase I slot 1: 8.7583 on the hidden set, 8.84 out-of-fold locally). Start
+with [`AGENTS.md`](AGENTS.md) for the layout and rules, [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md)
+for every experiment and verdict so far, and [`docs/RESEARCHER_GUIDE.md`](docs/RESEARCHER_GUIDE.md)
+to run a new campaign from a YAML spec with `python -m experiments.run`. The baseline material
+below is kept as the challenge's reference; its code now lives under `code/legacy/`.
+
+---
+
 ## The baseline pipeline
 
 Corneal endothelial assessment is important for evaluating corneal graft quality. The baseline formulates the task as:
@@ -253,7 +264,7 @@ The full walkthrough is:
 2. **Save** — `./do_save.sh` produces the image and model tarballs.
 3. **Create an Algorithm** on Grand Challenge and upload `clear_ec_algorithm_*.tar.gz`; upload `model.tar.gz` as a Model and attach it.
 4. **Try it** on a single case in the platform UI to confirm it runs there too.
-5. **Submit** the algorithm to the CLEAR-EC challenge phase. The evaluation method (see [`code/eval/`](code/eval/)) scores your three outputs against the hidden ground truth and updates the leaderboard.
+5. **Submit** the algorithm to the CLEAR-EC challenge phase. The challenge's evaluation method (not included in this repository) scores your three outputs against the hidden ground truth and updates the leaderboard.
 
 ---
 

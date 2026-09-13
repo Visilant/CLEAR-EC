@@ -1,5 +1,7 @@
 # Region-aware regression for CLEAR-EC
 
+> Historical (2026-09-11). Outcome: region-aware and patch inputs tied whole-image ConvNeXt; see `docs/EXPERIMENTS.md` (campaign convnext_20260911) and `docs/HANDOFF_2026-09-12.md`.
+
 ## Decision and handoff
 
 The user wants a competitive submission, aiming for roughly the top ten. The agreed research bet is **finding informative cell regions and predicting endothelial metrics from those regions**, rather than spending the next experiment budget on broad neural architecture search. This is a hypothesis worth testing, not evidence of a particular leaderboard rank.

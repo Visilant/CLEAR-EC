@@ -4,32 +4,41 @@
 
 Estimate cell density (CD), coefficient of variation (CV), and hexagonality
 (HEX) from corneal endothelial microscopy images for the CLEAR-EC challenge.
+Current method: direct regression with ImageNet-pretrained ConvNeXt backbones,
+trained on slide-grouped folds over all 9,000 labelled images.
 
-- `code/inference.py`: Grand Challenge container entrypoint, one case per run.
-- `code/main.py`: local batch inference; `code/evaluate.py`: CSV scoring.
-- `code/src/infer_cellpose_sam.py`: segmentation pipeline; despite its name,
-  the submission currently uses the installed Cellpose 1.0.2 `cyto` model.
-- `code/src/utils/evaluate.py`: baseline metric definitions and evaluation.
-- `code/src/data/`: image memmap cache, slide splits, deterministic crops,
-  configuration hashes, segmentation masks, and metric calculation.
-- `code/src/training/`: direct regression CNN, ridge calibration, scoring.
-- `code/scripts/`: cache building, sweeps, training, and overnight experiments.
-- `code/eda/`: four analysis phases; see its README for commands and outputs.
-- `code/viewer/`: local Streamlit image, segmentation, and metric viewer.
-- `code/tests/test_protocol.py`: split isolation, scoring, and CLI tests.
+- `docs/EXPERIMENTS.md`: generated ledger of every experiment, leaderboard, verdicts.
+- `docs/RESEARCHER_GUIDE.md`: how to run a new campaign end to end.
+- `docs/HANDOFF_2026-09-12.md`: the science (noise floor, headroom, Phase II directions).
+- `code/inference.py`: Grand Challenge container entrypoint (ships with `code/src/` only).
+- `code/src/training/`: the trainer split into `config`, `targets`, `data`, `models`,
+  `losses`, `loop`, `folds`, `predict`, `train`; `regression_cnn.py` re-exports the old names.
+- `code/src/data/`: image memmap cache, slide splits, deterministic crops, config hashes.
+- `code/experiments/`: YAML experiment specs, the GPU queue, scoring, ensembles, paired
+  comparisons, reports, and the ledger (`python -m experiments.run`).
+- `code/scripts/`: `run_training.py` (one run; used by the runner), `build_cache.py`,
+  `export_regression.py`, `benchmark_local.py`, `summarize_round1.py`, `noise_floor/`.
+- `code/legacy/`: the August Cellpose pipeline (segmentation cache, metric sweep, ridge
+  calibration, overnight orchestrator); runnable, tested, not used by current work.
+- `code/phase2/detector/`: the SAM/Cellpose-SAM cell-centre detection spike (gates failed).
+- `code/eda/`: four analysis phases; `code/viewer/`: local Streamlit image/metric viewer.
+- `code/tests/`: protocol, audit, parity, config/fold freezes, spec and CLI tests.
 - `data/` and `results/`: ignored local datasets, caches, and experiment artifacts.
 
 ## Local commands
 
-Run Python commands from `code/`. An existing local environment is at
-`code/.venv`; use `.venv/bin/python` when available.
+Run Python commands from `code/` with `.venv/bin/python` (no pip inside; add packages with
+`uv pip install --python code/.venv/bin/python <pkg>`).
 
 ```bash
 cd code
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python main.py --help
-.venv/bin/python -m eda.run_eda --help
+.venv/bin/python -m unittest discover -s tests -v      # CLEAR_EC_FULL_PARITY=1 for slow CPU parity
+.venv/bin/python -m experiments.run run experiments/specs/smoke.yaml --dry-run
+.venv/bin/python -m experiments.run run experiments/specs/<spec>.yaml --detach
+.venv/bin/python -m experiments.run status results/<name>
+.venv/bin/python -m experiments.run ledger
 .venv/bin/python scripts/run_training.py --help
+.venv/bin/python legacy/run_overnight.py --help
 .venv/bin/python -m streamlit run viewer/app.py
 ```
 
@@ -38,10 +47,8 @@ Runtime dependencies are in `code/requirements.txt`; Streamlit is in
 `environment.yml` exactly matches all runtime dependencies.
 
 Container scripts are invoked from `code/` with `bash do_build.sh`,
-`bash do_test_run.sh`, and `bash do_save.sh`. The smoke test needs local
-`test/input/interf0/` fixtures and a `model/` directory. Fixtures are absent;
-the readiness audit created a local regression bundle in `code/model/`.
-Check prerequisites before running expensive builds.
+`bash do_test_run.sh`, and `bash do_save.sh`; the submitted build lives in the
+sibling worktree `/home/visilant/CLEAR-EC-phase1-v2ens` (see its docs).
 
 ## Preserve experiment integrity
 
@@ -65,31 +72,20 @@ Runtime must work offline; bundle required model weights. CD is cells/mm²,
 CV is a ratio, and baseline HEX is fitted-hexagon IoU, not a count of
 six-sided cells. Preserve these semantics unless explicitly changing the method.
 
-## State observed at initialization (2026-09-11)
+## State (2026-09-13)
 
-The local overnight report records 9,000 images split 7,202/892/906 across
-train/val/test. It reports mean test errors of 27.28% for tuned Cellpose,
-14.83% for ridge calibration, and 16.59–23.29% for three regression CNN seeds.
-See `results/overnight/REPORT.md` and saved training artifacts for provenance;
-these are local evaluation results, not verified challenge leaderboard scores.
-
-The tuned Cellpose uses diameter 40 and crop fraction 0.5. The submission
-entrypoint defaults to automatic diameter and crop fraction 0.4, with no ridge
-calibration applied. It now accepts explicit regression bundles mounted at
-`/opt/ml/model` with `submission.json` and `best_model.pt`; export with
-`code/scripts/export_regression.py`. Do not assume a model is deployed unless
-the intended bundle is attached.
-
-See `AUDIT.md` for the subsequent readiness review and fixes. In particular,
-epoch scoring must use original labels: reconstructing zero targets from
-normalized float32 values corrupted prior checkpoint selection. A corrected
-ten-epoch run is saved under `results/audit_20260911/selection_fix/`, with
-12.51% validation error confirmed in the offline container at batch size 1.
-No new test scoring or official submission was performed. Four exact image
-duplicate pairs cross train/test; do not present the existing test split as
-fully independent. The existing splits were preserved.
-
-Existing user changes at initialization: modified `code/.dockerignore`,
-untracked `code/requirements-dev.txt`, and untracked `code/viewer/`. Preserve
-them. The top-level README describes the baseline and omits newer workflows;
-verify claims against code and artifacts.
+- Git: everything is on `main`; tags `phase1-slot1-v2ens` (submitted container, branch
+  `submission/phase1-v2ens`, worktree `/home/visilant/CLEAR-EC-phase1-v2ens`, frozen) and
+  `phase1-seed123-unused`. Older branches and worktrees were merged and deleted on 2026-09-13.
+- Score: Phase I slot 1 scored 8.7583 on the hidden 100 images (4th; top five 8.70 to 8.77).
+  Locally the same ensemble is 8.84 out-of-fold over 9,000 images. Two slots remain until the
+  2026-09-14 deadline; see the handoff for the slot recommendation.
+- Every lever tried since (label cleaning, capacity, longer training, seeds, TTA, calibration,
+  resolution, augmentation) moved the score by 0.03 or less; CV and HEX sit at the label-noise
+  floor. `docs/EXPERIMENTS.md` carries the verdict table; do not rerun what it marks.
+- Checkpoint compatibility: `RegressionConfig` field names and defaults are frozen by
+  `tests/test_config.py`; `tests/test_parity.py` reproduces the night's golden predictions.
+- The August baseline numbers (Cellpose 27.28, ridge 14.83 on the 906 test split) and the
+  readiness audit (`AUDIT.md`, corrected small CNN 12.51 val) are historical; the submission
+  entrypoint accepts regression bundles at `/opt/ml/model`, and `code/model/` still holds the
+  audited small-CNN bundle, not the deployed ensemble.
