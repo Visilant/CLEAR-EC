@@ -190,7 +190,7 @@ class AuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); _,labels,cache=self.make_cache(root)
             scores={'CD':10.,'CV':10.,'HEX':10.,'mean':10.}
-            with patch('src.training.regression_cnn._run_epoch',
+            with patch('src.training.train._run_epoch',
                        side_effect=[(1.,scores),(1.,scores),RuntimeError('interrupt')]), \
                  patch('torch.cuda.is_available',return_value=False):
                 with self.assertRaisesRegex(RuntimeError,'interrupt'):
