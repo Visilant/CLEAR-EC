@@ -12,6 +12,7 @@ campaigns:  # display titles and one-line summaries per results/<dir>; order is 
   noise_floor_20260912: {date: "2026-09-12", title: "Label-noise floor and the last two levers", summary: "Counting and process-noise floors from the 25 overlays; residual anatomy; label cleaning (B1) and V2-Base capacity (B3) both fail their gates."}
   sam_spike_20260912: {date: "2026-09-12", title: "SAM / Cellpose-SAM center-detection spike", summary: "Detector + Voronoi readout; every pre-registered gate failed. Code in code/phase2/detector."}
   smoke_runner: {date: "2026-09-13", title: "Runner smoke test", summary: "Two-epoch small CNN through experiments/run.py; not a result."}
+  cnn_20260913: {date: "2026-09-13", title: "Line C (2026-09-13): direct CNN, slot-2 candidate and screens", summary: "C0: OOF weight search over V2-Tiny / Tiny / V2-Base fold families and the v2ens_refit12 container (v2ens + two all-data V2-Tiny refits), built and replayed, not uploaded."}
 
 rows:  # facts that exist nowhere in machine-readable form
   - campaign: platform
@@ -24,6 +25,19 @@ rows:  # facts that exist nowhere in machine-readable form
     status: submitted
     verdict: "4th of the Phase I leaderboard on 2026-09-12; top five 8.7042 / 8.7452 / 8.7550 / 8.7583 / 8.7720. Consistent with OOF 8.84 +/- 0.96 (no distribution shift)."
     path: /home/visilant/CLEAR-EC-phase1-v2ens/results/phase1_v2ens
+  - campaign: cnn_20260913
+    run: "c0_slot2 (v2ens_refit12 container)"
+    date: "2026-09-13"
+    model: "v2ens (5x ConvNeXt-V2-Tiny w=2 + 5x ConvNeXt-Tiny w=1) + 2x all-data ConvNeXt-V2-Tiny refits (seeds 123/7, w=2), geometric mean, flip TTA"
+    split: oof9000
+    n: 9000
+    CD: 6.3000
+    CV: 10.2515
+    HEX: 9.9652
+    mean: 8.8389
+    status: "built, not uploaded"
+    verdict: "Score is the fold-only part (= v2ens); the refits saw every label and cannot be validated. Weight search: V2-Base w=3 would give OOF 8.814 (delta -0.025, CI -0.036 to -0.012) but costs 17.8 s/image on the A5000, so excluded. Image clear_ec_phase1:v2ens_refit12; 50-case replay max rel diff 3.3e-7; 15.2 s/case on a shared GPU 0. See results/cnn_20260913/c0_slot2/REPORT.md."
+    path: /home/visilant/CLEAR-EC-phase1-v2ens/results/phase1_v2ens_refit12
   - campaign: platform
     run: "leaderboard snapshot"
     date: "2026-09-11"

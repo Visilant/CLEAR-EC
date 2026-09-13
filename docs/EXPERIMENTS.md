@@ -1,6 +1,6 @@
 # CLEAR-EC experiment ledger
 
-Generated 2026-09-13 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 189 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
+Generated 2026-09-13 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 190 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
 
 Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is better). Splits: `oof9000` = every labelled image scored by the fold model that did not train on it (the compass); `val892` = the original slide-disjoint val split (best-epoch numbers there are optimistic); `platform100` = the hidden Phase I test set; `test906` = the August one-shot test split; `floor` = label-noise floors, not models.
 
@@ -12,6 +12,7 @@ Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is be
 |---|---|---|---:|---:|---:|---:|---|
 | noise_floor_20260912 | A3 OOF ens | v2ens (V2 w2 + Tiny w1) | 6.3000 | 10.2515 | 9.9652 | 8.8389 |  |
 | night_20260912 | v2ens = candidate_1 (submitted slot 1) | 5x convnextv2_tiny (w 2), 5x convnext_tiny (w 1) | 6.3000 | 10.2515 | 9.9652 | 8.8389 |  |
+| cnn_20260913 | c0_slot2 (v2ens_refit12 container) | v2ens (5x ConvNeXt-V2-Tiny w=2 + 5x ConvNeXt-Tiny w=1) + 2x all-data ConvNeXt-V2-Tiny refits (seeds 123/7, w=2), geometric mean, flip TTA | 6.3000 | 10.2515 | 9.9652 | 8.8389 | Score is the fold-only part (= v2ens); the refits saw every label and cannot be validated. Weight search: V2-Base w=3 would give OOF 8.814 (delta -0.025, CI -0.036 to -0.012) but costs 17.8 s/image on the A5000, so excluded. Image clear_ec_phase1:v2ens_refit12; 50-case replay max rel diff 3.3e-7; 15.2 s/case on a shared GPU 0. See results/cnn_20260913/c0_slot2/REPORT.md. |
 | noise_floor_20260912 | A3 OOF v2 | 5x ConvNeXt-V2-Tiny folds | 6.3545 | 10.3020 | 9.9301 | 8.8622 |  |
 | night_20260912 | v2fold OOF over 5 folds [last+flips] |  | 6.3545 | 10.3020 | 9.9301 | 8.8622 |  |
 | night_20260912 | v2fold OOF over 5 folds [last+none] |  | 6.3706 | 10.3100 | 9.9220 | 8.8676 |  |
@@ -320,6 +321,15 @@ Detector + Voronoi readout; every pre-registered gate failed. Code in code/phase
 | cpsam_d22.0_f0.8_c0.0_e0 (detections, train overlays; F1 0.68) | cpsam |  |  |  | overlay19 | 19 | 28.5091 | 39.9335 | 27.8005 | 32.0810 |  |  | oracle readout on clicks: CD 3.13 | scored |
 | cpsam_dNone_f0.4_c-2.0_e0 (detections, train overlays; F1 0.60) | cpsam |  |  |  | overlay19 | 19 | 34.5002 | 36.0463 | 27.6741 | 32.7402 |  |  | oracle readout on clicks: CD 3.13 | scored |
 | sam_vit_b_default (detections, train overlays; F1 0.26) | sam |  |  |  | overlay19 | 19 | 67.5855 | 41.4352 | 44.1329 | 51.0512 |  |  | oracle readout on clicks: CD 3.13 | scored |
+
+### 2026-09-13 Line C (2026-09-13): direct CNN, slot-2 candidate and screens
+
+`results/cnn_20260913`; 1 rows.
+C0: OOF weight search over V2-Tiny / Tiny / V2-Base fold families and the v2ens_refit12 container (v2ens + two all-data V2-Tiny refits), built and replayed, not uploaded.
+
+| run | model | seed | fold | epochs | split | n | CD | CV | HEX | mean | ci_low | ci_high | reference | status |
+|---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| c0_slot2 (v2ens_refit12 container) | v2ens (5x ConvNeXt-V2-Tiny w=2 + 5x ConvNeXt-Tiny w=1) + 2x all-data ConvNeXt-V2-Tiny refits (seeds 123/7, w=2), geometric mean, flip TTA |  |  |  | oof9000 | 9000 | 6.3000 | 10.2515 | 9.9652 | 8.8389 |  |  |  | built, not uploaded |
 
 ### 2026-09-13 Runner smoke test
 
