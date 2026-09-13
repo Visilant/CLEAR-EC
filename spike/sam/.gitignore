@@ -1,0 +1,7 @@
+.venv/
+weights/
+logs/
+results/
+overlays.json
+env_ok.txt
+__pycache__/
