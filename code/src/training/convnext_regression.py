@@ -37,15 +37,22 @@ class ConvNeXtTinyRegression(nn.Module):
         context_size: tuple[int, int] = (486, 648),
         patch_size: int = 384,
         num_patches: int = 4,
+        arch: str = "tiny",
+        antialias: bool = False,
+        drop_path: float = 0.1,
     ):
         super().__init__()
+        self.antialias = bool(antialias)
+        if arch not in {"tiny", "small", "base"}:
+            raise ValueError(f"Unknown ConvNeXt arch: {arch}")
         if input_mode not in {"whole", "fixed", "quality"}:
             raise ValueError(f"Unknown ConvNeXt input mode: {input_mode}")
         if num_patches != 4:
             raise ValueError("The validated regional design uses exactly four patches")
         models = _import_torchvision_models()
-        weights = models.ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
-        backbone = models.convnext_tiny(weights=weights)
+        weights_enum = getattr(models, f"ConvNeXt_{arch.capitalize()}_Weights")
+        weights = weights_enum.DEFAULT if pretrained else None
+        backbone = getattr(models, f"convnext_{arch}")(weights=weights, stochastic_depth_prob=float(drop_path))
         self.features = backbone.features
         self.avgpool = backbone.avgpool
         self.feature_dim = backbone.classifier[-1].in_features
@@ -66,7 +73,7 @@ class ConvNeXtTinyRegression(nn.Module):
         else:
             x = x.float()
         if size is not None and tuple(x.shape[-2:]) != tuple(size):
-            x = F.interpolate(x, size=size, mode="bilinear", align_corners=False)
+            x = F.interpolate(x, size=size, mode="bilinear", align_corners=False, antialias=self.antialias)
         if x.shape[1] == 1:
             x = x.expand(-1, 3, -1, -1)
         return (x - self.image_mean) / self.image_std
@@ -135,3 +142,47 @@ class ConvNeXtTinyRegression(nn.Module):
         patches = patches.reshape(batch * count, *patches.shape[2:])
         patch_features = self._encode(self._prepare(patches)).reshape(batch, count, -1).mean(1)
         return self.head(torch.cat([context, patch_features], dim=1))
+
+
+class TimmWholeImageRegression(nn.Module):
+    """Whole-image regressor on a timm backbone with its own pretrained normalisation."""
+
+    def __init__(
+        self,
+        name: str,
+        pretrained: bool = True,
+        context_size: tuple[int, int] = (486, 648),
+    ):
+        super().__init__()
+        import timm
+
+        kwargs = {}
+        if name.startswith("vit"):
+            # ViTs need a fixed token grid: context_size must be a multiple of the patch size.
+            kwargs = {"img_size": tuple(context_size), "dynamic_img_size": True}
+        self.backbone = timm.create_model(name, pretrained=pretrained, num_classes=0, in_chans=3, **kwargs)
+        cfg = self.backbone.pretrained_cfg
+        mean = cfg.get("mean", (0.485, 0.456, 0.406))
+        std = cfg.get("std", (0.229, 0.224, 0.225))
+        self.register_buffer("image_mean", torch.tensor(mean)[None, :, None, None])
+        self.register_buffer("image_std", torch.tensor(std)[None, :, None, None])
+        self.context_size = tuple(context_size)
+        self.feature_dim = self.backbone.num_features
+        self.head = nn.Sequential(
+            nn.LayerNorm(self.feature_dim), nn.Dropout(0.2), nn.Linear(self.feature_dim, 3)
+        )
+
+    def _prepare(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dtype == torch.uint8:
+            x = x.float().div(255.0)
+        else:
+            x = x.float()
+        if tuple(x.shape[-2:]) != self.context_size:
+            x = F.interpolate(x, size=self.context_size, mode="bilinear", align_corners=False)
+        if x.shape[1] == 1:
+            x = x.expand(-1, 3, -1, -1)
+        return (x - self.image_mean) / self.image_std
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        features = self.backbone(self._prepare(x))
+        return self.head(features)
