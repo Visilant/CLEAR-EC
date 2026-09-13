@@ -48,7 +48,7 @@ class RegressionConfig:
     train_fraction: float = 1.0  # <1 keeps this fraction of training slides (learning-curve runs)
     exclude_idx_file: str = ""  # whitespace-separated cache indices dropped from TRAINING only (label-cleaning runs)
     crop_scale: float = 1.0  # <1 enables scale-preserving random crops (min side fraction) in training
-    cd_head: str = "gap"  # gap | density: CD as the spatial sum of a softplus 1x1-conv map (ConvNeXt whole-image only)
+    cd_head: str = "gap"  # gap | density: CD as exp(log_scale) * mean of a softplus 1x1-conv map (ConvNeXt whole-image only)
     loss_trim: float = 0.0  # relative loss: drop the ceil(loss_trim * batch) largest per-sample errors when batch >= 4
 
     def __post_init__(self) -> None:

@@ -1,7 +1,10 @@
 # Line C, step C1 (2026-09-13): two-fold screens of two trainer levers on the night_v2_5fold recipe
 # (ConvNeXt-V2-Tiny, relative loss, EMA 0.999 + cosine, fixed 8 epochs, last checkpoint, clip_grad 1.0).
-#   density: cd_head=density, CD as the spatial sum of a softplus 1x1-conv map over the final feature map.
-#   trim:    loss_trim=0.125, drop the ceil(0.125 * 8) = 1 largest per-sample relative error per batch.
+#   density:  cd_head=density as first written (scale * sum, scale init 1/(H'W')); fold 0 only. Its fold 1
+#             was stopped after fold 0 showed CD 11.3 vs 6.4 (val MAPE, epoch 8): the CD path learned ~3x slower.
+#   density2: the same lever reparameterised as exp(log_scale) * mean(map), log_scale init 0 so the initial
+#             CD sits at the GAP head's scale; fold 0 only, fold 1 only if the fold-0 paired delta <= -0.05.
+#   trim:     loss_trim=0.125, drop the ceil(0.125 * 8) = 1 largest per-sample relative error per batch.
 # Reference: results/night_20260912/oof/v2fold{0,1}_last_flips.csv (seed 123, same recipe but no clip_grad:
 # it was added after those folds ran, so the comparison carries that small confound).
 # Gate (design doc C4): paired slide-clustered delta <= -0.05 with CI excluding 0 promotes to five folds.
@@ -28,10 +31,13 @@ base:
   patience: 0
   clip_grad: 1.0
 arms:
-  - {name: density, overrides: {cd_head: density}, seeds: [123], n_folds: 5, folds: [0, 1]}
+  - {name: density, overrides: {cd_head: density}, seeds: [123], n_folds: 5, folds: [0]}
   - {name: trim, overrides: {loss_trim: 0.125}, seeds: [123], n_folds: 5, folds: [0, 1]}
+  - {name: density2, overrides: {cd_head: density}, seeds: [123], n_folds: 5, folds: [0]}
 post:
   score: {which: last, tta: flips}
   compare:
-    - {candidate: density, reference: "results/night_20260912/oof/v2fold[01]_last_flips.csv"}
     - {candidate: trim, reference: "results/night_20260912/oof/v2fold[01]_last_flips.csv"}
+    - {candidate: density, reference: "results/night_20260912/oof/v2fold0_last_flips.csv"}
+    - {candidate: density2, reference: "results/night_20260912/oof/v2fold0_last_flips.csv"}
+    - {candidate: density2, reference: density}

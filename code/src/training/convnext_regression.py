@@ -45,24 +45,40 @@ class _ChannelLayerNorm(nn.LayerNorm):
 
 
 class DensityCDHead(nn.Module):
-    """CD as the spatial sum of a non-negative 1x1-conv map: scale * sum(softplus(conv(norm(F)))) + bias.
+    """CD as the mean of a non-negative 1x1-conv map: exp(log_scale) * mean(softplus(conv(norm(F)))) + bias.
 
-    The frame is 1000 x 750 um, so 0.75 x CD is a count and a summed map carries counting semantics.
-    scale starts at 1 / (H' * W') so the initial output is the map's mean (order 1 in normalised target
-    units, like the GAP head); bias starts at 0 and absorbs the target normalisation offset."""
+    The frame is 1000 x 750 um, so 0.75 x CD is a count and a summed map carries counting semantics; the
+    mean is that sum divided by the fixed grid area, so the conv sees the same mean-pooled gradient scale as
+    the GAP head's linear layer. log_scale starts at 0: softplus of a default-initialised conv over
+    LayerNormed features averages about log(2), the same order as the GAP head's initial output (tested
+    within 2x). bias starts at 0 and absorbs the target normalisation offset (normalised CD is negative
+    below the dataset mean, which a non-negative map cannot reach on its own).
+
+    The first screen (results/cnn_20260913/c1/density0) parameterised this as scale * sum with scale
+    starting at 1 / (H' * W'); such checkpoints load through the pre-hook below, forward-equivalent."""
 
     def __init__(self, in_channels: int, grid: tuple[int, int]):
         super().__init__()
+        self.grid = (int(grid[0]), int(grid[1]))
         self.norm = _ChannelLayerNorm(in_channels, eps=1e-6)
         self.conv = nn.Conv2d(in_channels, 1, kernel_size=1)
-        self.scale = nn.Parameter(torch.tensor(1.0 / float(grid[0] * grid[1])))
+        self.log_scale = nn.Parameter(torch.zeros(()))
         self.bias = nn.Parameter(torch.zeros(()))
+        self._register_load_state_dict_pre_hook(self._upgrade_legacy_scale)
+
+    def _upgrade_legacy_scale(self, state_dict, prefix, *args) -> None:
+        legacy, current = prefix + "scale", prefix + "log_scale"
+        if legacy in state_dict and current not in state_dict:
+            scale = state_dict.pop(legacy).float() * float(self.grid[0] * self.grid[1])
+            if not scale > 0:
+                raise ValueError(f"legacy density scale {float(scale)} cannot be expressed as exp(log_scale)")
+            state_dict[current] = scale.log().to(state_dict.get(prefix + "bias", scale).dtype)
 
     def density_map(self, features: torch.Tensor) -> torch.Tensor:
         return F.softplus(self.conv(self.norm(features)))
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
-        return self.scale * self.density_map(features).sum(dim=(1, 2, 3)) + self.bias
+        return self.log_scale.exp() * self.density_map(features).mean(dim=(1, 2, 3)) + self.bias
 
 
 def _check_cd_head(cd_head: str, input_mode: str = "whole") -> str:

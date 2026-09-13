@@ -43,8 +43,8 @@ class DensityHeadTests(unittest.TestCase):
         self.assertTrue(torch.isfinite(out).all())
         self.assertEqual(tuple(density.shape), (2, 1, *_feature_grid(CONTEXT)))
         self.assertTrue((density >= 0).all(), "softplus map is non-negative")
-        # CD is the summed map times the learned scale plus the learned bias, nothing else.
-        expected = model.density.scale * density.sum(dim=(1, 2, 3)) + model.density.bias
+        # CD is the map's mean times exp(log_scale) plus the learned bias, nothing else.
+        expected = model.density.log_scale.exp() * density.mean(dim=(1, 2, 3)) + model.density.bias
         torch.testing.assert_close(out[:, 0], expected)
 
     def test_feature_grid_matches_backbone_stride(self):
@@ -54,13 +54,39 @@ class DensityHeadTests(unittest.TestCase):
         self.assertEqual(tuple(feat.shape[-2:]), _feature_grid(CONTEXT))
         self.assertEqual(_feature_grid((486, 648)), (15, 20))
 
-    def test_initial_scale_is_one_over_grid(self):
+    def test_initial_log_scale_and_bias_are_zero(self):
         head = DensityCDHead(8, (3, 5))
-        self.assertAlmostEqual(float(head.scale), 1.0 / 15)
-        self.assertEqual(float(head.bias), 0.0)
+        self.assertEqual((float(head.log_scale), float(head.bias)), (0.0, 0.0))
+        self.assertEqual(head.grid, (3, 5))
+
+    def test_initial_cd_magnitude_within_2x_of_gap_head(self):
+        # Same backbone weights, same input: the density head's initial CD must sit at the GAP head's scale
+        # (RMS over 16 images), otherwise the CD path trains at a different effective rate.
+        gap = _tiny("gap", seed=5)
+        density = _tiny("density", seed=6)
+        density.load_state_dict(gap.state_dict(), strict=False)
+        torch.manual_seed(7)
+        x = torch.randint(0, 256, (16, 1, 64, 96), dtype=torch.uint8)
+        with torch.no_grad():
+            a, b = gap(x)[:, 0], density(x)[:, 0]
+        ratio = float(b.pow(2).mean().sqrt() / a.pow(2).mean().sqrt())
+        self.assertTrue(0.5 <= ratio <= 2.0, f"initial CD RMS ratio density/gap = {ratio:.3f}")
+
+    def test_legacy_scale_checkpoint_loads_forward_equivalent(self):
+        # density0 (2026-09-13) saved scale * sum with scale = 1/(H'W') at init; it must load and predict
+        # the same CD through exp(log_scale) * mean.
+        head = DensityCDHead(8, (3, 5))
+        legacy = {k: v for k, v in head.state_dict().items() if k != "log_scale"}
+        legacy["scale"] = torch.tensor(0.0052)
+        head.load_state_dict(legacy)
+        self.assertAlmostEqual(float(head.log_scale), math.log(0.0052 * 15), places=5)
         feat = torch.randn(4, 8, 3, 5)
-        # A summed softplus map divided by its area sits at the same order as a GAP head output.
-        self.assertLess(float(head(feat).abs().mean()), 2.0)
+        with torch.no_grad():
+            expected = 0.0052 * head.density_map(feat).sum(dim=(1, 2, 3)) + head.bias
+            torch.testing.assert_close(head(feat), expected, rtol=1e-5, atol=1e-6)
+        legacy["scale"] = torch.tensor(-0.001)
+        with self.assertRaises(ValueError):
+            DensityCDHead(8, (3, 5)).load_state_dict(legacy)
 
     def test_gap_default_adds_no_parameters_and_density_keeps_cv_hex(self):
         gap = _tiny("gap", seed=1)
