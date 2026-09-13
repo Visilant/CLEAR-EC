@@ -8,13 +8,15 @@ Grand Challenge runtime contract:
     /output/coefficient-of-variation.json                      CV prediction
     /output/hexagonality.json                                  HEX prediction
 
-Pipeline: load the MHA, run Cellpose v1.0 on the full image, restrict
-metrics to a deterministic random crop (40% of H x 40% of W with seed 42),
-emit CD / CV / HEX.
+Pipeline: load the MHA; if /opt/ml/model/submission.json describes an ensemble
+bundle, run every member (ConvNeXt-Tiny / ConvNeXt-V2-Tiny whole-image regressors)
+with flip TTA and emit the weighted geometric mean of CD / CV / HEX. Without a
+bundle, fall back to the Cellpose baseline.
 """
 
 import glob
 import json
+import os
 import random
 import sys
 from pathlib import Path
@@ -32,6 +34,7 @@ INPUT_PATH = Path("/input")
 OUTPUT_PATH = Path("/output")
 RESOURCE_PATH = Path("/opt/app/resources")
 MODEL_PATH = Path("/opt/ml/model")
+BAKED_MODEL_PATH = Path("/opt/app/model")  # bundle copied into the image; /opt/ml/model (platform-mounted) wins if present
 
 SEED = 42
 RANDOM_CROP_FRAC = 0.4
@@ -74,8 +77,10 @@ def interf0_handler() -> int:
     image_path = Path(sorted(image_files)[0])
     print(f"Processing input: {image_path.name}")
 
-    if (MODEL_PATH / "submission.json").exists():
-        prediction = predict_model_bundle(image_path, MODEL_PATH)
+    bundle_dir = next((d for d in (MODEL_PATH, BAKED_MODEL_PATH) if (d / "submission.json").exists()), None)
+    if bundle_dir is not None:
+        print(f"Using model bundle at {bundle_dir}")
+        prediction = predict_model_bundle(image_path, bundle_dir)
     else:
         prediction = predict_baseline(image_path)
 
@@ -94,30 +99,92 @@ def interf0_handler() -> int:
 
 
 def predict_model_bundle(image_path: Path, model_dir: Path) -> dict:
-    """Apply an explicitly exported regression checkpoint, one image per case."""
+    """Apply the exported ensemble bundle to one image.
+
+    submission.json lists members (checkpoint file, weight, sha256); each member is a
+    whole-image regressor. Per member: geometric mean over flip views; across members:
+    weighted geometric mean; then physical clamps.
+    """
     import hashlib
-    from src.training.regression_cnn import _load_checkpoint
-    from src.training.common import denormalize_targets, METRICS
+    from src.training.common import METRICS, denormalize_targets
+    from src.training.regression_cnn import (
+        RegressionConfig, _inverse_target_space, build_regression_model,
+    )
 
     metadata = load_json_file(location=model_dir / "submission.json")
-    if metadata.get("method") != "regression_cnn":
+    if metadata.get("method") != "ensemble":
         raise ValueError("Unknown submission bundle method")
-    checkpoint = model_dir / "best_model.pt"
-    if hashlib.sha256(checkpoint.read_bytes()).hexdigest() != metadata["sha256"]:
-        raise ValueError("Submission checkpoint checksum mismatch")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model, stats, cfg = _load_checkpoint(model_dir, device)
-    model.eval()
+    if device.type == "cpu":
+        torch.set_num_threads(_cpu_budget())
+    views = {"none": [(False, False)],
+             "flips": [(False, False), (True, False), (False, True), (True, True)]}[metadata.get("tta", "none")]
+    # Verify every member checksum before touching the image or any model.
+    for member in metadata["members"]:
+        path = model_dir / member["file"]
+        if hashlib.sha256(path.read_bytes()).hexdigest() != member["sha256"]:
+            raise ValueError(f"Submission checkpoint checksum mismatch for {member['file']}")
     image = load_image(image_path)[..., 0].copy()
-    # Match the exported training configuration, including legacy float inputs.
-    if not cfg.uint8_inputs:
-        image = image.astype(np.float32) / 255.0
-    x = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).to(device)
-    with torch.inference_mode():
-        prediction = denormalize_targets(model(x).cpu().numpy(), stats)[0]
+    x_u8 = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).to(device)
+
+    log_preds, weights = [], []
+    for member in metadata["members"]:
+        path = model_dir / member["file"]
+        ckpt = torch.load(path, map_location=device, weights_only=False)
+        config = dict(ckpt["config"])
+        config.setdefault("uint8_inputs", False)
+        cfg = RegressionConfig(**config)
+        model = build_regression_model(cfg, load_pretrained=False)
+        model.load_state_dict(ckpt["model_state"])
+        model.to(device).eval()
+        stats = ckpt["target_stats"]
+        x = x_u8 if cfg.uint8_inputs else x_u8.float() / 255.0
+        member_logs = []
+        with torch.inference_mode():
+            for hflip, vflip in views:
+                xv = x
+                if hflip:
+                    xv = torch.flip(xv, dims=[-1])
+                if vflip:
+                    xv = torch.flip(xv, dims=[-2])
+                out = model(xv).float().cpu().numpy()
+                out = _inverse_target_space(denormalize_targets(out, stats), cfg.target_space)[0]
+                member_logs.append(np.log(np.clip(out, 1e-6, None)))
+        log_preds.append(np.mean(member_logs, axis=0))
+        weights.append(float(member.get("weight", 1.0)))
+        del model
+        print(f"member {member['file']}: {np.exp(log_preds[-1]).round(4).tolist()}", flush=True)
+
+    prediction = np.exp(np.average(np.stack(log_preds), axis=0, weights=weights))
+    clamp = metadata.get("clamp", {})
+    prediction = np.array([
+        float(np.clip(prediction[k], *clamp[m])) if m in clamp else float(prediction[k])
+        for k, m in enumerate(METRICS)
+    ])
     if not np.isfinite(prediction).all():
         raise ValueError("Non-finite model bundle prediction")
     return dict(zip(METRICS, map(float, prediction)))
+
+
+def _cpu_budget() -> int:
+    """Threads to use on CPU: the cgroup CPU quota if set, else the affinity count, capped at 8."""
+    n = None
+    for quota_file in ("/sys/fs/cgroup/cpu.max", "/sys/fs/cgroup/cpu/cpu.cfs_quota_us"):
+        try:
+            parts = Path(quota_file).read_text().split()
+            quota = int(parts[0])
+            period = int(parts[1]) if len(parts) > 1 else int(Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read_text())
+            if quota > 0:
+                n = max(1, quota // period)
+            break
+        except (OSError, ValueError, IndexError):
+            continue
+    if n is None:
+        try:
+            n = len(os.sched_getaffinity(0))
+        except (AttributeError, OSError):
+            n = os.cpu_count() or 1
+    return max(1, min(int(n), 8))
 
 
 def predict_baseline(image_path: Path) -> dict:

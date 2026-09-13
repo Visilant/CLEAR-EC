@@ -31,6 +31,7 @@ RUN python -m pip install \
 RUN python -c "from cellpose import models; models.Cellpose(gpu=False, model_type='cyto')"
 
 COPY --chown=user:user src /opt/app/src
+COPY --chown=user:user model /opt/app/model
 COPY --chown=user:user inference.py /opt/app/
 
 ENTRYPOINT ["python", "inference.py"]

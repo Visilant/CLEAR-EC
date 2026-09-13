@@ -2,7 +2,6 @@
 results/
 results_mha/
 test/
-model/
 data/
 
 # Local dev / scratch

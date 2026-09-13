@@ -13,3 +13,4 @@ ImageIO==2.37.2
 fastremap==1.19.0
 tqdm==4.67.3
 SimpleITK
+timm==1.0.29

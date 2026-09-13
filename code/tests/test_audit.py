@@ -65,8 +65,8 @@ class AuditTests(unittest.TestCase):
         from inference import predict_model_bundle
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
-            (root/'submission.json').write_text(json.dumps({'method':'regression_cnn','sha256':'wrong'}))
-            (root/'best_model.pt').write_bytes(b'changed')
+            (root/'submission.json').write_text(json.dumps({'method':'ensemble','members':[{'file':'member.pt','weight':1,'sha256':'wrong'}]}))
+            (root/'member.pt').write_bytes(b'changed')
             with self.assertRaisesRegex(ValueError,'checksum'):
                 predict_model_bundle(root/'image.mha',root)
 
