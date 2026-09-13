@@ -19,7 +19,7 @@ Upload `clear_ec_phase1_seed123.tar.gz` as the **container** (approximately 3.9 
 
 ## Account requirements and upload
 
-The user authorized submitting this candidate to **Phase I: Screening Phase (Preliminary Evaluation)**. No further approval of that action is needed, but account authentication is not configured in this environment.
+The user authorized submitting this candidate to **Phase I: Screening Phase (Preliminary Evaluation)**. Account access has now been established, and the authenticated phase form confirmed three available submissions before this submission attempt. Credentials are not stored in this repository.
 
 Required information:
 
@@ -31,4 +31,12 @@ Upload the container archive through the Algorithm's container management page, 
 
 The three outputs are `cell-density.json`, `coefficient-of-variation.json` and `hexagonality.json`. Confirm the phase interface, account quota, GPU/memory limits and deadline in the authenticated form. The platform keeps the hidden test images and labels; it returns an evaluation result rather than a downloadable evaluation set.
 
-No upload or official submission has occurred yet. Local verification does not establish platform acceptance or leaderboard rank.
+## Platform receipt
+
+- Algorithm: [CLEAR EC Direct Regression Seed 123](https://grand-challenge.org/algorithms/clear-ec-direct-regression-seed-123/).
+- Model version: `8433bcab-12b3-4101-acf0-c7391f9f95af`, imported and active.
+- Container version: `564b9ad9-2d8e-47d6-9f8f-651216f05ce8`, uploaded; container import was started at the last check.
+- Authenticated Phase I limits: 300 seconds per case, maximum 32 GB RAM, with no GPU/T4/A10G permitted. This algorithm requests T4 and 16 GB RAM.
+- Authenticated Phase I closing time: September 15, 2026, 10:00 UTC.
+
+The official submission ID is pending container activation. No Phase I slot has been used yet. Local verification does not establish platform acceptance or leaderboard rank. The local `results/phase1_submission/status.json` records progress and will be updated with the submission/evaluation URLs.
