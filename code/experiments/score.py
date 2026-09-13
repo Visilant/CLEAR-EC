@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+from experiments import REPO
 from experiments.provenance import read_json, write_json
 from experiments.spec import Job, Spec
 from experiments.stats import compare_frames
@@ -116,7 +117,7 @@ def load_predictions(spec: Spec, jobs: list[Job], ref: str, which: str, tta: str
         return pd.read_csv(ens)
     if any(j.arm == ref for j in jobs):
         return arm_predictions(spec, jobs, ref, which, tta).reset_index()
-    pattern = ref if Path(ref).is_absolute() else str((spec.results_dir.parents[1] / ref))
+    pattern = ref if Path(ref).is_absolute() else str(REPO / ref)  # repo-relative, like spec paths
     files = sorted(glob.glob(pattern))
     if not files:
         raise FileNotFoundError(f"reference {ref!r} matches no ensemble, arm or files")

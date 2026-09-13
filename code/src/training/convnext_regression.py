@@ -1,4 +1,4 @@
-"""ConvNeXt-Tiny regressors with deterministic whole-image and region inputs."""
+"""ConvNeXt regressors with deterministic whole-image and region inputs, and the density-map CD head."""
 
 from __future__ import annotations
 
@@ -27,6 +27,52 @@ def _import_torchvision_models():
         return models
 
 
+CD_HEADS = ("gap", "density")
+FEATURE_STRIDE = 32  # ConvNeXt: 4x4/4 stem then three 2x2/2 downsamples, each a floor division
+
+
+def _feature_grid(context_size: tuple[int, int]) -> tuple[int, int]:
+    """Final feature-map size of a ConvNeXt for an input of context_size."""
+    return (int(context_size[0]) // FEATURE_STRIDE, int(context_size[1]) // FEATURE_STRIDE)
+
+
+class _ChannelLayerNorm(nn.LayerNorm):
+    """LayerNorm over the channel axis of an NCHW map (per position), as in the GAP head's LayerNorm."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.layer_norm(x.permute(0, 2, 3, 1), self.normalized_shape, self.weight, self.bias, self.eps)
+        return x.permute(0, 3, 1, 2)
+
+
+class DensityCDHead(nn.Module):
+    """CD as the spatial sum of a non-negative 1x1-conv map: scale * sum(softplus(conv(norm(F)))) + bias.
+
+    The frame is 1000 x 750 um, so 0.75 x CD is a count and a summed map carries counting semantics.
+    scale starts at 1 / (H' * W') so the initial output is the map's mean (order 1 in normalised target
+    units, like the GAP head); bias starts at 0 and absorbs the target normalisation offset."""
+
+    def __init__(self, in_channels: int, grid: tuple[int, int]):
+        super().__init__()
+        self.norm = _ChannelLayerNorm(in_channels, eps=1e-6)
+        self.conv = nn.Conv2d(in_channels, 1, kernel_size=1)
+        self.scale = nn.Parameter(torch.tensor(1.0 / float(grid[0] * grid[1])))
+        self.bias = nn.Parameter(torch.zeros(()))
+
+    def density_map(self, features: torch.Tensor) -> torch.Tensor:
+        return F.softplus(self.conv(self.norm(features)))
+
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        return self.scale * self.density_map(features).sum(dim=(1, 2, 3)) + self.bias
+
+
+def _check_cd_head(cd_head: str, input_mode: str = "whole") -> str:
+    if cd_head not in CD_HEADS:
+        raise ValueError(f"Unknown cd_head: {cd_head!r} (expected one of {CD_HEADS})")
+    if cd_head == "density" and input_mode != "whole":
+        raise ValueError("cd_head='density' needs the whole-image input mode")
+    return cd_head
+
+
 class ConvNeXtTinyRegression(nn.Module):
     """ImageNet ConvNeXt-Tiny using either the full frame or four shared patches."""
 
@@ -40,9 +86,11 @@ class ConvNeXtTinyRegression(nn.Module):
         arch: str = "tiny",
         antialias: bool = False,
         drop_path: float = 0.1,
+        cd_head: str = "gap",
     ):
         super().__init__()
         self.antialias = bool(antialias)
+        self.cd_head = _check_cd_head(cd_head, input_mode)
         if arch not in {"tiny", "small", "base"}:
             raise ValueError(f"Unknown ConvNeXt arch: {arch}")
         if input_mode not in {"whole", "fixed", "quality"}:
@@ -66,6 +114,8 @@ class ConvNeXtTinyRegression(nn.Module):
         self.head = nn.Sequential(
             nn.LayerNorm(head_in), nn.Dropout(0.2), nn.Linear(head_in, 3)
         )
+        if self.cd_head == "density":
+            self.density = DensityCDHead(self.feature_dim, _feature_grid(self.context_size))
 
     def _prepare(self, x: torch.Tensor, size: tuple[int, int] | None = None) -> torch.Tensor:
         if x.dtype == torch.uint8:
@@ -135,6 +185,10 @@ class ConvNeXtTinyRegression(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.input_mode == "whole":
+            if self.cd_head == "density":
+                features = self.features(self._prepare(x, self.context_size))
+                out = self.head(torch.flatten(self.avgpool(features), 1))
+                return torch.cat([self.density(features)[:, None], out[:, 1:]], dim=1)
             return self.head(self._encode(self._prepare(x, self.context_size)))
         context = self._encode(self._prepare(x, (243, 324)))
         patches = self._select_patches(x)
@@ -152,9 +206,12 @@ class TimmWholeImageRegression(nn.Module):
         name: str,
         pretrained: bool = True,
         context_size: tuple[int, int] = (486, 648),
+        cd_head: str = "gap",
     ):
         super().__init__()
         import timm
+
+        self.cd_head = _check_cd_head(cd_head)
 
         kwargs = {}
         if name.startswith("vit"):
@@ -171,6 +228,8 @@ class TimmWholeImageRegression(nn.Module):
         self.head = nn.Sequential(
             nn.LayerNorm(self.feature_dim), nn.Dropout(0.2), nn.Linear(self.feature_dim, 3)
         )
+        if self.cd_head == "density":
+            self.density = DensityCDHead(self.feature_dim, _feature_grid(self.context_size))
 
     def _prepare(self, x: torch.Tensor) -> torch.Tensor:
         if x.dtype == torch.uint8:
@@ -184,5 +243,10 @@ class TimmWholeImageRegression(nn.Module):
         return (x - self.image_mean) / self.image_std
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.cd_head == "density":
+            # backbone(x) == forward_head(forward_features(x)); CV and HEX keep that pooled path exactly.
+            feature_map = self.backbone.forward_features(self._prepare(x))
+            out = self.head(self.backbone.forward_head(feature_map))
+            return torch.cat([self.density(feature_map)[:, None], out[:, 1:]], dim=1)
         features = self.backbone(self._prepare(x))
         return self.head(features)

@@ -14,6 +14,8 @@ FROZEN_DEFAULTS = {
     "target_space": "linear", "photometric": False, "fold": -1, "n_folds": 0, "all_data": False,
     "clip_grad": 0.0, "drop_path": 0.1, "antialias": False, "train_fraction": 1.0,
     "exclude_idx_file": "", "crop_scale": 1.0,
+    # Added 2026-09-13 (line C1): density-map CD head and trimmed relative loss; defaults keep the old behaviour.
+    "cd_head": "gap", "loss_trim": 0.0,
 }
 
 
@@ -23,9 +25,11 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual([f.name for f in fields(RegressionConfig)], list(FROZEN_DEFAULTS))
 
     def test_old_checkpoint_config_without_new_fields_loads(self):
-        old = {k: v for k, v in FROZEN_DEFAULTS.items() if k not in ("clip_grad", "uint8_inputs", "crop_scale")}
+        old = {k: v for k, v in FROZEN_DEFAULTS.items()
+               if k not in ("clip_grad", "uint8_inputs", "crop_scale", "cd_head", "loss_trim")}
         cfg = config_from_checkpoint(old)
         self.assertEqual(cfg.clip_grad, 0.0)
+        self.assertEqual((cfg.cd_head, cfg.loss_trim), ("gap", 0.0))
         self.assertFalse(cfg.uint8_inputs)  # historical checkpoints used CPU float conversion
 
     def test_recipe_hash_ignores_run_identity(self):

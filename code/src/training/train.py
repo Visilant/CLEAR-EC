@@ -118,7 +118,7 @@ def train_regression_cnn(
     if cfg.channels_last:
         model = model.to(memory_format=torch.channels_last)
     scaler = torch.cuda.amp.GradScaler(enabled=cfg.amp and device.type == "cuda")
-    criterion = _build_loss(cfg.loss, stats, target_space=cfg.target_space).to(device)
+    criterion = _build_loss(cfg.loss, stats, target_space=cfg.target_space, trim=cfg.loss_trim).to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay
     )

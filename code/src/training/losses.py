@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 
@@ -12,11 +14,16 @@ from src.training.targets import _inverse_target_space_torch
 class RelativeAbsoluteErrorLoss(nn.Module):
     """Mean absolute relative error in original (raw) metric units."""
 
-    def __init__(self, stats: dict[str, dict[str, float]], target_space: str = "linear"):
+    MIN_TRIM_BATCH = 4  # smaller batches (a short last partial one) are never trimmed
+
+    def __init__(self, stats: dict[str, dict[str, float]], target_space: str = "linear", trim: float = 0.0):
         super().__init__()
+        if not 0.0 <= trim < 1.0:
+            raise ValueError(f"trim must be in [0, 1), got {trim}")
         self.register_buffer("means", torch.tensor([stats[m]["mean"] for m in METRICS]))
         self.register_buffer("stds", torch.tensor([stats[m]["std"] for m in METRICS]))
         self.target_space = target_space
+        self.trim = float(trim)
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor, target_raw: torch.Tensor | None = None) -> torch.Tensor:
         pred_transformed = pred * self.stds + self.means
@@ -28,20 +35,40 @@ class RelativeAbsoluteErrorLoss(nn.Module):
         # small tolerance accounts for normalized float32 round trips.
         valid = target_raw.abs() > 1e-5
         relative = (pred_raw - target_raw).abs() / target_raw.abs().clamp_min(1e-5)
+        if self.trim > 0 and relative.shape[0] >= self.MIN_TRIM_BATCH:
+            return _trimmed_mean(relative, valid, self.trim)
         return relative[valid].mean()
+
+
+def _trimmed_mean(relative: torch.Tensor, valid: torch.Tensor, trim: float) -> torch.Tensor:
+    """Mean over samples after dropping the ceil(trim * batch) largest per-sample relative errors.
+
+    A sample's error is the mean over its valid metrics (the batch-level MAPE weights every valid
+    element equally; the trimmed variant weights samples equally so that one image is one unit)."""
+    counts = valid.sum(dim=1)
+    per_sample = relative.masked_fill(~valid, 0.0).sum(dim=1) / counts.clamp_min(1)
+    per_sample = per_sample[counts > 0]
+    n = per_sample.numel()
+    k = math.ceil(trim * relative.shape[0])
+    if n - k < 1:
+        return per_sample.mean()
+    return torch.topk(per_sample, n - k, largest=False).values.mean()
 
 
 def _build_loss(
     name: str,
     stats: dict[str, dict[str, float]] | None = None,
     target_space: str = "linear",
+    trim: float = 0.0,
 ) -> nn.Module:
     if name == "mse":
         return nn.MSELoss()
     if name == "relative":
         if stats is None:
             raise ValueError("Relative loss requires target statistics")
-        return RelativeAbsoluteErrorLoss(stats, target_space=target_space)
+        return RelativeAbsoluteErrorLoss(stats, target_space=target_space, trim=trim)
+    if trim > 0:
+        raise ValueError("loss_trim applies to the relative loss only")
     if name != "huber":
         raise ValueError(f"Unknown loss: {name}")
     return nn.HuberLoss(delta=1.0)

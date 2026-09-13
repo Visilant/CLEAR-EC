@@ -74,6 +74,7 @@ def build_regression_model(cfg: RegressionConfig, *, load_pretrained: bool | Non
             arch=cfg.model.split("_", 1)[1],
             antialias=cfg.antialias,
             drop_path=cfg.drop_path,
+            cd_head=cfg.cd_head,
         )
     if cfg.model.startswith("timm:"):
         from src.training.convnext_regression import TimmWholeImageRegression
@@ -81,9 +82,12 @@ def build_regression_model(cfg: RegressionConfig, *, load_pretrained: bool | Non
             name=cfg.model[len("timm:"):],
             pretrained=cfg.pretrained if load_pretrained is None else load_pretrained,
             context_size=(cfg.context_height, cfg.context_width),
+            cd_head=cfg.cd_head,
         )
     if cfg.model != "small":
         raise ValueError(f"Unknown regression model: {cfg.model}")
+    if cfg.cd_head != "gap":
+        raise ValueError("cd_head is a ConvNeXt lever; the small CNN has only the GAP head")
     return SmallRegressionCNN(downsample=cfg.downsample, normalization=cfg.normalization)
 
 

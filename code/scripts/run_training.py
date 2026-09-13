@@ -31,6 +31,7 @@ CHOICES = {
     "sched": ["none", "cosine"],
     "target_space": ["linear", "log"],
     "normalization": ["batch", "group"],
+    "cd_head": ["gap", "density"],
 }
 HELP = {
     "model": "small | convnext_tiny | convnext_small | convnext_base | timm:<name>",
@@ -40,6 +41,8 @@ HELP = {
     "crop_scale": "<1 enables scale-preserving random crops with this min side fraction.",
     "clip_grad": "Gradient-norm clipping (0 disables). Use 1.0 for ConvNeXt-V2.",
     "exclude_idx_file": "Whitespace-separated cache indices dropped from training only.",
+    "cd_head": "gap (frozen default) | density: CD as the summed softplus 1x1-conv map (ConvNeXt whole-image).",
+    "loss_trim": "Relative loss: drop the ceil(loss_trim * batch) largest per-sample errors when batch >= 4.",
     "float_inputs": "Legacy FP32 CPU preprocessing (default: uint8 inputs).",
 }
 
