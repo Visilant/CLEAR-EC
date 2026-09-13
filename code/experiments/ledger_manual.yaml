@@ -1,0 +1,79 @@
+# Hand-maintained facts the ledger cannot read from results/ (prose-only numbers, verdicts, deletions).
+# Regenerate docs/EXPERIMENTS.md with: cd code && .venv/bin/python -m experiments.run ledger
+
+campaigns:  # display titles and one-line summaries per results/<dir>; order is chronological
+  eda: {date: "2026-08-26", title: "Exploratory data analysis", summary: "Label distributions, image statistics, annotated-box vs random-crop overlap (IoU about 0.16), baseline error anatomy. No model rows; see results/eda/."}
+  overnight: {date: "2026-08-27", title: "August baseline: Cellpose, ridge calibration, small CNN", summary: "Slide-disjoint train/val/test protocol; frozen Cellpose config diameter_40 crop 0.5; one-shot test scores."}
+  audit_20260911: {date: "2026-09-11", title: "Readiness audit", summary: "Fixed checkpoint selection, cache clobbering and scoring joins (AUDIT.md); the corrected 10-epoch small CNN is the first credible model."}
+  convnext_20260911: {date: "2026-09-11", title: "ConvNeXt-Tiny whole-image and patch arms", summary: "Six arms at seed 123, 20 epochs, best-epoch selection on the 892 val split. No REPORT.md; numbers from metrics.json."}
+  round1_20260912_002113: {date: "2026-09-12", title: "Round 1: BatchNorm vs GroupNorm x seeds (small CNN)", summary: "Paired slide-clustered CIs against the audited incumbent; the ensemble gain missed the 0.2 gate."}
+  night_20260912: {date: "2026-09-12", title: "Night of 2026-09-12: stabilized recipe, folds, refits, exploration", summary: "EMA + cosine + fixed budget removed the epoch swings; ConvNeXt-V2-Tiny wins every fold; ten-model ensemble OOF 8.84 became slot 1."}
+  long_training_20260912_40ep: {date: "2026-09-12", title: "Long training screen (two folds, 8 to 40 epochs)", summary: "Matched 8-epoch cosine prefix then constant LR; longer is slightly worse."}
+  noise_floor_20260912: {date: "2026-09-12", title: "Label-noise floor and the last two levers", summary: "Counting and process-noise floors from the 25 overlays; residual anatomy; label cleaning (B1) and V2-Base capacity (B3) both fail their gates."}
+  sam_spike_20260912: {date: "2026-09-12", title: "SAM / Cellpose-SAM center-detection spike", summary: "Detector + Voronoi readout; every pre-registered gate failed. Code in code/phase2/detector."}
+  smoke_runner: {date: "2026-09-13", title: "Runner smoke test", summary: "Two-epoch small CNN through experiments/run.py; not a result."}
+
+rows:  # facts that exist nowhere in machine-readable form
+  - campaign: platform
+    run: "Phase I slot 1 (v2ens)"
+    date: "2026-09-12"
+    model: "5x ConvNeXt-V2-Tiny + 5x ConvNeXt-Tiny fold models, geometric mean, flip TTA"
+    split: platform100
+    n: 100
+    mean: 8.7583
+    status: submitted
+    verdict: "4th of the Phase I leaderboard on 2026-09-12; top five 8.7042 / 8.7452 / 8.7550 / 8.7583 / 8.7720. Consistent with OOF 8.84 +/- 0.96 (no distribution shift)."
+    path: /home/visilant/CLEAR-EC-phase1-v2ens/results/phase1_v2ens
+  - campaign: platform
+    run: "leaderboard snapshot"
+    date: "2026-09-11"
+    split: platform100
+    n: 100
+    mean: 8.7042
+    status: reference
+    verdict: "Best team score at the first snapshot (idea.md); others 8.7452, 8.7720, 8.7843, 8.9145."
+    path: idea.md
+
+verdicts:  # levers tested; joined to rows by glob on "<campaign>/<run>" (research_handoff section 4, 2026-09-12)
+  - lever: "Label cleaning (drop top-2 percent flagged from training)"
+    runs: ["noise_floor_20260912/b1_*"]
+    verdict: "fails the 0.10 gate: delta -0.028 (CI -0.087 to +0.030) on 1,802 held-out images; test labels carry the same noise"
+    do_not_rerun: true
+  - lever: "Capacity: ConvNeXt-V2-Base, 5 folds"
+    runs: ["noise_floor_20260912/b3_*", "night_20260912/x_v2base*"]
+    verdict: "tie: OOF 8.871 vs 8.897 (CI -0.053 to -0.001) at 3.5x the cost; fails the 0.15 gate"
+    do_not_rerun: true
+  - lever: "Other backbones: ConvNeXt-Small, V2-Nano, DINOv2 ViT-S, pure-MAE V2 init"
+    runs: ["night_20260912/x_small*", "night_20260912/x_v2nano*", "night_20260912/x_dinov2*", "night_20260912/x_v2fcmae*", "night_20260912/x_in12k*"]
+    verdict: "lose or tie on the 892 val split (9.29 to 12.75 vs 9.21 to 9.27)"
+    do_not_rerun: true
+  - lever: "Longer training"
+    runs: ["night_20260912/r3_*", "night_20260912/x_reg_e20*", "long_training_20260912_40ep/*"]
+    verdict: "loses at the last epoch; V2 plateaus at epochs 7 to 8; 40 epochs is +0.046 worse than 8"
+    do_not_rerun: true
+  - lever: "Seeds and seed ensembles"
+    runs: ["night_20260912/v2fold0_s42*", "night_20260912/r3_seed42*", "night_20260912/refit_seed42*"]
+    verdict: "seeds correlate 0.994; a two-seed ensemble gains 0.02; nothing to average"
+    do_not_rerun: true
+  - lever: "Resolution, antialias, crops, log targets, weight decay, drop-path, half data"
+    runs: ["night_20260912/x_highres*", "night_20260912/x_antialias*", "night_20260912/x_crop06*", "night_20260912/x_logspace*", "night_20260912/x_wd5e-2*", "night_20260912/x_dp03*", "night_20260912/x_half*", "convnext_20260911/*"]
+    verdict: "all within 0.05 of the baseline on 892 val (half the data costs 0.05 to 0.09)"
+    do_not_rerun: true
+  - lever: "Detector-based Voronoi readout (SAM / Cellpose-SAM)"
+    runs: ["sam_spike_20260912/*"]
+    verdict: "detector recall 0.5 to 0.75, CD MAPE 21 to 35 percent vs a 6 percent gate; the only route to the CD headroom for Phase II"
+    do_not_rerun: true
+  - lever: "Flip TTA / best-epoch selection"
+    runs: ["night_20260912/* [*+flips]"]
+    verdict: "+0.02 to 0.03 / +0.02; TTA is in v2ens, best-epoch selection is not used (fixed budget)"
+    do_not_rerun: false
+  - lever: "Small-CNN normalization x seeds (round 1)"
+    runs: ["round1_20260912_002113/*"]
+    verdict: "BatchNorm beats GroupNorm by 0.5; three-seed ensemble +0.09 missed the 0.2 gate; superseded by ConvNeXt"
+    do_not_rerun: true
+  - lever: "Cellpose baseline and ridge calibration"
+    runs: ["overnight/*", "audit_20260911/*"]
+    verdict: "Cellpose 'cyto' outputs correlate 0.2 to 0.3 with GT CD; ridge (14.8) and the constant (14.2) beat it; superseded by direct regression"
+    do_not_rerun: true
+
+deleted: []  # appended by the 2026-09-13 cleanup: {path, size, reason}
