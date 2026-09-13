@@ -35,3 +35,6 @@ model/
 .vscode/
 *.swp
 .DS_Store
+
+# Playwright MCP scratch
+.playwright-mcp/

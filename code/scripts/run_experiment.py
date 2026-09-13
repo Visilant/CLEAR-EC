@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.data.cache import build_image_cache, open_image_cache
 from src.data.config import MetricConfig, SegConfig, config_hash
 from src.data.splits import load_split
-from src.utils.evaluate import evaluate_results
+from src.training.common import pred_artifact_path, score_by_id
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -68,6 +68,8 @@ def _parse_metric_sweep(spec: str) -> dict[str, list[float]]:
 
 
 def _seg_config_cli(seg_config: SegConfig) -> list[str]:
+    if seg_config.net_avg:
+        raise ValueError("This runner currently supports net_avg=False only")
     cmd = [
         "--model_type",
         seg_config.model_type,
@@ -103,8 +105,9 @@ def main() -> None:
         cache_dir=cache_dir,
         seed=args.seed,
         force=args.force_cache,
-        limit=limit,
-        expected_count=9000 if limit is None else 0,
+        # --limit restricts the experiment, never the shared dataset cache.
+        limit=None,
+        expected_count=9000,
     )
 
     if args.seg_config:
@@ -170,14 +173,12 @@ def main() -> None:
     for crop_frac in crop_fracs:
         metric_config = MetricConfig(random_crop_frac=crop_frac, random_crop_seed=args.seed)
         exp_hash = config_hash((seg_hash, metric_config))
-        pred_csv = cache_dir / "preds" / f"{exp_hash}.csv"
+        pred_csv = pred_artifact_path(cache_dir, exp_hash, args.split, limit=args.limit)
         if not pred_csv.exists():
             continue
         pred_df = pd.read_csv(pred_csv)
-        _, avg_error_df = evaluate_results(pred_df, gt_df)
-        if avg_error_df.empty:
-            continue
-        mean_err = avg_error_df.mean(axis=1, skipna=True).iloc[0]
+        expected_ids = index_df.loc[index_df.idx.isin(indices), "ID"]
+        mean_err = score_by_id(pred_df, gt_df, expected_ids=expected_ids)["mean"]
         candidate = (mean_err, crop_frac, exp_hash, pred_csv)
         if best is None or candidate[0] < best[0]:
             best = candidate

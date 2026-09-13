@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from src.io_utils import _load_mha
-from src.data.splits import build_splits
+from src.data.splits import build_splits, load_splits, assert_protocol_splits
 
 IMAGE_FILENAME = "images_u8.npy"
 INDEX_FILENAME = "index.csv"
@@ -98,13 +98,22 @@ def build_image_cache(
         and index_path.exists()
     ):
         index_df = pd.read_csv(index_path)
-        if len(index_df) == n:
+        matches = (len(index_df) == n and
+                   index_df.ID.astype(str).tolist() == [r['ID'] for r in rows] and
+                   index_df.slide_id.astype(str).tolist() == [r['slide_id'] for r in rows] and
+                   index_df.mha_path.astype(str).tolist() == [r['mha_path'] for r in rows])
+        if matches:
             print(f"Cache already exists at {cache_dir} ({n} rows); skipping rebuild.")
-            build_splits(index_df, cache_dir, seed=seed)
+            # Opening an existing dataset must not silently change held-out roles.
+            assert_protocol_splits(index_df, load_splits(cache_dir))
             return open_image_cache(cache_dir)
-        print(
-            f"Existing cache row count ({len(index_df)}) != expected ({n}); rebuilding."
+        raise ValueError(
+            "Existing cache does not match requested dataset. Use a new cache_dir; "
+            "explicit --force_cache is required to replace an existing cache."
         )
+
+    if any((cache_dir / name).exists() for name in ("masks", "preds")):
+        raise ValueError("Cannot rebuild a cache with derived masks/predictions; use a new cache_dir")
 
     print(f"Building memmap cache: {n} images -> {memmap_path}")
     memmap = np.memmap(
@@ -157,6 +166,11 @@ def open_image_cache(cache_dir: Path) -> tuple[np.memmap, pd.DataFrame]:
 
     index_df = pd.read_csv(index_path)
     n = len(index_df)
+    if index_df.ID.duplicated().any() or index_df.idx.tolist() != list(range(n)):
+        raise ValueError("Cache index must have unique IDs and consecutive ordered indices")
+    expected_bytes = n * int(np.prod(EXPECTED_SHAPE))
+    if memmap_path.stat().st_size != expected_bytes:
+        raise ValueError(f"Cache byte size mismatch: expected {expected_bytes}")
     memmap = np.memmap(
         memmap_path,
         dtype=np.uint8,

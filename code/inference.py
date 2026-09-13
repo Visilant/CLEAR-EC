@@ -25,11 +25,13 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.infer_cellpose_sam import get_segmentation
+from src.io_utils import load_image
 
 
 INPUT_PATH = Path("/input")
 OUTPUT_PATH = Path("/output")
 RESOURCE_PATH = Path("/opt/app/resources")
+MODEL_PATH = Path("/opt/ml/model")
 
 SEED = 42
 RANDOM_CROP_FRAC = 0.4
@@ -72,6 +74,53 @@ def interf0_handler() -> int:
     image_path = Path(sorted(image_files)[0])
     print(f"Processing input: {image_path.name}")
 
+    if (MODEL_PATH / "submission.json").exists():
+        prediction = predict_model_bundle(image_path, MODEL_PATH)
+    else:
+        prediction = predict_baseline(image_path)
+
+    cd = float(prediction["CD"])
+    cv = float(prediction["CV"])
+    hex_ = float(prediction["HEX"])
+    if not np.isfinite([cd, cv, hex_]).all():
+        raise ValueError("Predictions must be finite JSON numbers")
+    print(f"Predictions: CD={cd:.2f}  CV={cv:.2f}  HEX={hex_:.2f}")
+
+    OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
+    write_json_file(location=OUTPUT_PATH / "cell-density.json", content=cd)
+    write_json_file(location=OUTPUT_PATH / "coefficient-of-variation.json", content=cv)
+    write_json_file(location=OUTPUT_PATH / "hexagonality.json", content=hex_)
+    return 0
+
+
+def predict_model_bundle(image_path: Path, model_dir: Path) -> dict:
+    """Apply an explicitly exported regression checkpoint, one image per case."""
+    import hashlib
+    from src.training.regression_cnn import _load_checkpoint
+    from src.training.common import denormalize_targets, METRICS
+
+    metadata = load_json_file(location=model_dir / "submission.json")
+    if metadata.get("method") != "regression_cnn":
+        raise ValueError("Unknown submission bundle method")
+    checkpoint = model_dir / "best_model.pt"
+    if hashlib.sha256(checkpoint.read_bytes()).hexdigest() != metadata["sha256"]:
+        raise ValueError("Submission checkpoint checksum mismatch")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model, stats, cfg = _load_checkpoint(model_dir, device)
+    model.eval()
+    image = load_image(image_path)[..., 0].copy()
+    # Match the exported training configuration, including legacy float inputs.
+    if not cfg.uint8_inputs:
+        image = image.astype(np.float32) / 255.0
+    x = torch.from_numpy(image).unsqueeze(0).unsqueeze(0).to(device)
+    with torch.inference_mode():
+        prediction = denormalize_targets(model(x).cpu().numpy(), stats)[0]
+    if not np.isfinite(prediction).all():
+        raise ValueError("Non-finite model bundle prediction")
+    return dict(zip(METRICS, map(float, prediction)))
+
+
+def predict_baseline(image_path: Path) -> dict:
     predictions, _ = get_segmentation(
         image_paths=[image_path],
         plotting=False,
@@ -91,18 +140,7 @@ def interf0_handler() -> int:
     if not predictions:
         raise RuntimeError("Segmentation returned no predictions")
 
-    prediction = predictions[0]
-    cd = float(prediction["CD"])
-    cv = float(prediction["CV"])
-    hex_ = float(prediction["HEX"])
-    print(f"Predictions: CD={cd:.2f}  CV={cv:.2f}  HEX={hex_:.2f}")
-
-    OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
-    write_json_file(location=OUTPUT_PATH / "cell-density.json", content=cd)
-    write_json_file(location=OUTPUT_PATH / "coefficient-of-variation.json", content=cv)
-    write_json_file(location=OUTPUT_PATH / "hexagonality.json", content=hex_)
-
-    return 0
+    return predictions[0]
 
 
 def get_interface_key() -> tuple:
@@ -118,7 +156,7 @@ def load_json_file(*, location: Path):
 
 def write_json_file(*, location: Path, content) -> None:
     with open(location, "w") as f:
-        f.write(json.dumps(content, indent=4))
+        f.write(json.dumps(content, indent=4, allow_nan=False))
 
 
 def _show_torch_cuda_info() -> None:

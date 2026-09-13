@@ -1,0 +1,14 @@
+{
+  "ckpt_dir": "results/audit_20260911/selection_fix/regression_cnn/seed_42",
+  "which": "best",
+  "epoch": 9,
+  "indices": "code/tests/fixtures/parity_idx20.txt",
+  "n": 20,
+  "tta": "flips",
+  "mape": {
+    "CD": 15.830047538700589,
+    "CV": 11.629323795881144,
+    "HEX": 12.580110499346155,
+    "mean": 13.34649394464263
+  }
+}

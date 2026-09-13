@@ -223,8 +223,7 @@ def get_segmentation(
             masks = segment_image(model, processed_image, seg_config)
             flows = None
         except Exception as e:
-            print(f"Error during model evaluation: {e}")
-            continue
+            raise RuntimeError(f"Segmentation failed for {pathname.name}") from e
 
         # Filter cells by annotation dots. Masks are in full-image coordinates
         # (segmentation ran on the whole image), so cell centroids are already

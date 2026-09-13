@@ -12,7 +12,7 @@ def calculate_metrics_from_masks(masks, ID=""):
     hexagonality = calculate_hexagonality(masks)
     std_area = np.std(areas) if len(areas) > 0 else 0
     total_area = np.sum(areas)
-    count = np.max(masks)
+    count = len(areas)
 
     predictions = {
         "ID": ID,
@@ -78,16 +78,9 @@ def calculate_hexagonality(masks):
     Input: masks (numpy.ndarray): The mask image where objects are segmented.
     Output: hexagonality (float): Hexagonality of cell shapes.
     """
-    count = np.max(masks)
-
     hexagonalities = []
     stats = regionprops(masks)
-
-    # regionprops are 0-indexed, labels start at 1
-    if count == 0:
-        return 0
-    for i in range(count):
-        cell = stats[i]
+    for cell in stats:
 
         min_row, min_col, max_row, max_col = cell.bbox
         mask_single_cell = masks[min_row:max_row, min_col:max_col].copy()

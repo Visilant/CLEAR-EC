@@ -64,7 +64,7 @@ HEX = mean(IoU_i)
 
 Higher HEX means shapes closer to a regular hexagon. Returns `0` if no cells are found. (This IoU-to-fitted-hexagon definition is the implemented baseline; it is not a discrete "6-sided cell" count.)
 
-> **Region of interest (random crop).** The baseline segments the **full** image, then restricts the metrics to a deterministic random crop — 40% of H × 40% of W, seeded per image — by keeping only cells whose centroid lies inside the crop. See `code/inference.py` and `code/src/infer_cellpose_sam.py`.
+> **Region of interest (random crop).** The baseline segments the **full** image, then slices the mask to a deterministic random crop — 40% of H × 40% of W, seeded per image. Every surviving label is counted, including partial cells cut by the crop boundary. This can bias area-based metrics; it is not centroid-based selection. See `code/src/data/crop.py`.
 
 Each processed image yields a prediction row with `ID, CD, CV, HEX` (plus `SD`, `Total Area (µm²)`, and `Number of Cells`, which are not scored).
 
@@ -265,4 +265,3 @@ The full walkthrough is:
 - **OCI vs. legacy tar.** Always export with `do_save.sh`; don't hand-roll `docker save`.
 - **Platform is `linux/amd64`.** If you build on Apple Silicon, keep the `--platform=linux/amd64` flags (the scripts already set them).
 - **Forgetting to rebuild.** Editing `src/` does nothing until you rebuild. `do_test_run.sh` and `do_save.sh` rebuild for you.
-

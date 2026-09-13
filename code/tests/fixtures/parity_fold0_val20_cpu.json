@@ -1,0 +1,14 @@
+{
+  "ckpt_dir": "results/night_20260912/fold0/regression_cnn/seed_123",
+  "which": "last",
+  "epoch": 12,
+  "indices": "code/tests/fixtures/parity_idx20.txt",
+  "n": 20,
+  "tta": "flips",
+  "mape": {
+    "CD": 6.432055874455925,
+    "CV": 7.339219600901368,
+    "HEX": 7.4630095230327544,
+    "mean": 7.078094999463349
+  }
+}
