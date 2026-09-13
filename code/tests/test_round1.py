@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from scripts.summarize_round1 import paired_cluster_ci
+from experiments.stats import paired_cluster_ci
 from src.training.regression_cnn import (
     RegressionConfig, RelativeAbsoluteErrorLoss, SmallRegressionCNN, _load_checkpoint,
 )

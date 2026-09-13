@@ -15,7 +15,7 @@ from src.data.crop import crop_and_relabel_masks
 from src.data.config import SegConfig
 from src.data.mask_cache import save_mask, load_mask
 from src.training.common import score_by_id, pred_artifact_path
-from src.training.calibration import _fit_ridge
+from legacy.calibration import _fit_ridge
 from src.training.regression_cnn import SmallRegressionCNN, RegressionConfig, train_regression_cnn, MetricRegressionDataset, _run_epoch
 from src.utils.evaluate import calculate_metrics_from_masks
 from src.training.common import write_manifest
@@ -118,7 +118,7 @@ class AuditTests(unittest.TestCase):
         np.testing.assert_allclose(_fit_ridge(x,y,alpha=2,fit_intercept=False),[.5])
 
     def test_overnight_batch_hash_matches_worker_cli(self):
-        from scripts.run_overnight import OvernightRunner, build_parser, _seg_config_cli
+        from legacy.run_overnight import OvernightRunner, build_parser, _seg_config_cli
         args=build_parser().parse_args(['--batch_size','32'])
         runner=OvernightRunner(args)
         for _, cfg in [('default',runner.default_seg), *runner.ablation_configs]:

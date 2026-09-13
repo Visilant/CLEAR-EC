@@ -95,7 +95,7 @@ def main() -> None:
     cache_dir = (code_root / args.cache_dir).resolve()
     data_dir = (code_root / args.data_dir).resolve()
     labels_csv = (code_root / args.labels_csv).resolve()
-    scripts_dir = code_root / "scripts"
+    scripts_dir = Path(__file__).resolve().parent  # legacy/ holds the segmentation and sweep scripts
 
     limit = args.limit if args.limit > 0 else None
 

@@ -11,31 +11,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.data.splits import load_split
+from experiments.stats import paired_cluster_ci
 from src.training.common import METRICS, labels_for_indices, score_by_id
-
-
-def paired_cluster_ci(candidate, baseline, targets, groups, n_boot=2000):
-    """Candidate minus baseline, preserving image weighting and per-target masks."""
-    valid = np.abs(targets) > 1e-8
-    denominator = np.where(valid, np.abs(targets), 1.0)
-    delta = np.where(valid, (np.abs(candidate-targets) - np.abs(baseline-targets))
-                     / denominator * 100, 0.0)
-    _, inverse = np.unique(groups, return_inverse=True)
-    count = inverse.max() + 1
-    sums = np.zeros((count, 3))
-    sizes = np.zeros((count, 3))
-    np.add.at(sums, inverse, delta)
-    np.add.at(sizes, inverse, valid)
-    rng = np.random.default_rng(20260911)
-    samples = []
-    for _ in range(n_boot):
-        selected = rng.integers(0, count, size=count)
-        denominators = sizes[selected].sum(axis=0)
-        if np.all(denominators > 0):
-            samples.append(np.mean(sums[selected].sum(axis=0) / denominators))
-    if not samples:
-        raise ValueError('No bootstrap resample contains all three scored metrics')
-    return np.quantile(samples, [0.025, 0.975]).tolist()
 
 
 def main():

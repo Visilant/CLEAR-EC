@@ -177,7 +177,7 @@ class ArtifactTests(unittest.TestCase):
         self.assertTrue(str(test_path).endswith(f"{exp_hash}/test.csv"))
 
     def test_sweep_metrics_parser_requires_split(self) -> None:
-        from scripts import sweep_metrics
+        from legacy import sweep_metrics
 
         parser = sweep_metrics.build_parser()
         args = parser.parse_args(
@@ -214,7 +214,7 @@ class TrainingCliTests(unittest.TestCase):
 
 class CacheRecoveryTests(unittest.TestCase):
     def test_ensure_cache_rebuilds_instead_of_waiting(self) -> None:
-        from scripts.run_overnight import cache_is_full, ensure_cache
+        from legacy.run_overnight import cache_is_full, ensure_cache
 
         import tempfile
 
@@ -247,7 +247,7 @@ class CacheRecoveryTests(unittest.TestCase):
 
 class SelectionIsolationTests(unittest.TestCase):
     def test_calibration_fit_does_not_read_test_ids(self) -> None:
-        from src.training.calibration import fit_calibration, CalibrationConfig
+        from legacy.calibration import fit_calibration, CalibrationConfig
 
         index_df = _tiny_index(n_slides=6, images_per_slide=2)
         splits = {

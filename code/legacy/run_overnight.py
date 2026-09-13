@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.data.config import MetricConfig, SegConfig, config_hash
 from src.data.splits import assert_protocol_splits, load_split, load_splits
-from src.training.calibration import evaluate_calibration_split, train_calibration
+from legacy.calibration import evaluate_calibration_split, train_calibration
 from src.training.common import (
     experiment_hash,
     paired_bootstrap_mape,
