@@ -12,7 +12,7 @@ campaigns:  # display titles and one-line summaries per results/<dir>; order is 
   noise_floor_20260912: {date: "2026-09-12", title: "Label-noise floor and the last two levers", summary: "Counting and process-noise floors from the 25 overlays; residual anatomy; label cleaning (B1) and V2-Base capacity (B3) both fail their gates."}
   sam_spike_20260912: {date: "2026-09-12", title: "SAM / Cellpose-SAM center-detection spike", summary: "Detector + Voronoi readout; every pre-registered gate failed. Code in code/phase2/detector."}
   smoke_runner: {date: "2026-09-13", title: "Runner smoke test", summary: "Two-epoch small CNN through experiments/run.py; not a result."}
-  cnn_20260913: {date: "2026-09-13", title: "Line C (2026-09-13): direct CNN, slot-2 candidate and screens", summary: "C0: OOF weight search over V2-Tiny / Tiny / V2-Base fold families and the v2ens_refit12 container (v2ens + two all-data V2-Tiny refits), built and replayed, not uploaded."}
+  cnn_20260913: {date: "2026-09-13", title: "Line C (2026-09-13): direct CNN, slot-2 candidate and screens", summary: "C0: slot-2 candidates v2ens_refit12 and v2ens_plus (17 members, OOF 8.814) built, replayed, not uploaded. Screens: trimmed loss, density head, scale jitter all lose; highres and Small five-fold families add <= 0.005 to the ensemble (C5). Nothing approaches the one-point goal."}
 
   detector_20260913: {date: "2026-09-13", title: "Line S (2026-09-13): trained cell-centre heatmap detector", summary: "S1 U-Net on 19 overlays (test recall 0.891, F1 0.901, count ratio 0.98); S2 readout over 9,000 (val-892 CD MAPE 10.1 vs CNN 6.32, stack adds nothing); S3 count-supervised retrain (direct-count CD ~8 on a val subset). Gates failed; Phase II material."}
 
@@ -128,6 +128,10 @@ verdicts:  # levers tested; joined to rows by glob on "<campaign>/<run>" (docs/H
   - lever: "Label-transforming scale jitter (zoom s, CD x 1/s^2), +/-0.2 log-uniform"
     runs: ["cnn_20260913/sj02*"]
     verdict: "two-fold screen: fold0 8.944 vs 8.766, fold1 8.861 vs 8.639 (last epoch); CD worsens (6.90 vs 6.38 on fold 0), CV/HEX unchanged. Loses."
+    do_not_rerun: yes
+  - lever: "More ensemble families (V2-Tiny 648x864 five folds, ConvNeXt-Small five folds)"
+    runs: ["cnn_20260913/v2hr*", "cnn_20260913/small*"]
+    verdict: "single-model OOF 8.912 / 8.988; added to v2ens_plus: +0.0005 / -0.004, best five-family 8.809 vs 8.814 (CI -0.012 to +0.003). Ensemble ceiling reached; see results/cnn_20260913/c5_weights/REPORT.md."
     do_not_rerun: yes
 deleted:  # 2026-09-13 cleanup (code/experiments/cleanup_20260913.sh and git worktree removal)
   - {path: results/failed_run_20260827_125247, size: 3.5M, reason: "aborted first overnight attempt (dev_limit 1500), superseded by results/overnight", date: "2026-09-13"}

@@ -1,6 +1,6 @@
 # CLEAR-EC experiment ledger
 
-Generated 2026-09-14 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 199 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
+Generated 2026-09-14 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 208 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
 
 Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is better). Splits: `oof9000` = every labelled image scored by the fold model that did not train on it (the compass); `val892` = the original slide-disjoint val split (best-epoch numbers there are optimistic); `platform100` = the hidden Phase I test set; `test906` = the August one-shot test split; `floor` = label-noise floors, not models.
 
@@ -80,6 +80,7 @@ Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is be
 | Trimmed relative loss (drop 1 of 8 per batch) | cnn_20260913/trim* | two-fold screen: fold0 8.869 vs 8.750, fold1 8.648 vs 8.639 (last+flips); loses or ties | yes |
 | Density-map CD head (sum of a softplus 1x1 map) | cnn_20260913/density* | fold0: first parameterisation 10.43, reparameterised exp(log_scale)*mean 12.39 (CD 14.2, CV 11.7, HEX 11.3) vs 8.750; all three metrics worse, the head harms the shared backbone. Dead. | yes |
 | Label-transforming scale jitter (zoom s, CD x 1/s^2), +/-0.2 log-uniform | cnn_20260913/sj02* | two-fold screen: fold0 8.944 vs 8.766, fold1 8.861 vs 8.639 (last epoch); CD worsens (6.90 vs 6.38 on fold 0), CV/HEX unchanged. Loses. | yes |
+| More ensemble families (V2-Tiny 648x864 five folds, ConvNeXt-Small five folds) | cnn_20260913/v2hr*, cnn_20260913/small* | single-model OOF 8.912 / 8.988; added to v2ens_plus: +0.0005 / -0.004, best five-family 8.809 vs 8.814 (CI -0.012 to +0.003). Ensemble ceiling reached; see results/cnn_20260913/c5_weights/REPORT.md. | yes |
 
 ## Campaigns
 
@@ -329,18 +330,27 @@ Detector + Voronoi readout; every pre-registered gate failed. Code in code/phase
 
 ### 2026-09-13 Line C (2026-09-13): direct CNN, slot-2 candidate and screens
 
-`results/cnn_20260913`; 9 rows.
-C0: OOF weight search over V2-Tiny / Tiny / V2-Base fold families and the v2ens_refit12 container (v2ens + two all-data V2-Tiny refits), built and replayed, not uploaded.
+`results/cnn_20260913`; 18 rows.
+C0: slot-2 candidates v2ens_refit12 and v2ens_plus (17 members, OOF 8.814) built, replayed, not uploaded. Screens: trimmed loss, density head, scale jitter all lose; highres and Small five-fold families add <= 0.005 to the ensemble (C5). Nothing approaches the one-point goal.
 
 | run | model | seed | fold | epochs | split | n | CD | CV | HEX | mean | ci_low | ci_high | reference | status |
 |---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
 | Phase I slot 2 candidate v2ens_plus (17 members) | v2ens + 2 all-data V2-Tiny refits (w2) + 5 V2-Base folds (w3), geometric mean, flip TTA |  |  |  | oof9000 | 9000 |  |  |  | 8.8140 |  |  |  | built, not uploaded |
 | c0_slot2 (v2ens_refit12 container) | v2ens (5x ConvNeXt-V2-Tiny w=2 + 5x ConvNeXt-Tiny w=1) + 2x all-data ConvNeXt-V2-Tiny refits (seeds 123/7, w=2), geometric mean, flip TTA |  |  |  | oof9000 | 9000 | 6.3000 | 10.2515 | 9.9652 | 8.8389 |  |  |  | built, not uploaded |
+| c3_highres/v2hr3 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 3 | 8/8 | fold-3/5 | 1788 | 5.9503 | 9.9774 | 9.8771 | 8.6016 |  |  |  | done |
 | c1/trim1 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 1 | 8/8 | fold-1/5 | 1783 | 6.1376 | 10.0972 | 9.7102 | 8.6483 |  |  |  | done |
+| c4_small/small3 | convnext_small | 123 | 3 | 12/12 | fold-3/5 | 1788 | 5.9199 | 10.1103 | 10.2125 | 8.7476 |  |  |  | done |
 | c3_highres/v2hr0 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 6.3790 | 10.0356 | 9.8341 | 8.7496 |  |  |  | done |
+| c4_small/small1 | convnext_small | 123 | 1 | 12/12 | fold-1/5 | 1783 | 6.0792 | 10.2258 | 10.0460 | 8.7837 |  |  |  | done |
 | c2/sj021 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 1 | 8/8 | fold-1/5 | 1783 | 6.5161 | 10.3033 | 9.7643 | 8.8612 |  |  |  | done |
 | c1/trim0 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 6.6573 | 10.0451 | 9.9051 | 8.8691 |  |  |  | done |
+| c3_highres/v2hr4 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 4 | 8/8 | fold-4/5 | 1825 | 6.3751 | 10.2571 | 9.9864 | 8.8729 |  |  |  | done |
+| c4_small/small0 | convnext_small | 123 | 0 | 12/12 | fold-0/5 | 1802 | 6.3143 | 10.2819 | 10.2143 | 8.9368 |  |  |  | done |
 | c2/sj020 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 6.9050 | 10.1260 | 9.8018 | 8.9443 |  |  |  | done |
+| c4_small/small4 | convnext_small | 123 | 4 | 12/12 | fold-4/5 | 1825 | 6.3096 | 10.3846 | 10.2010 | 8.9651 |  |  |  | done |
+| c3_highres/v2hr1 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 1 | 8/8 | fold-1/5 | 1783 | 6.2860 | 10.4223 | 10.1917 | 8.9667 |  |  |  | done |
+| c3_highres/v2hr2 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 2 | 8/8 | fold-2/5 | 1802 | 7.0121 | 10.9848 | 10.2304 | 9.4091 |  |  |  | done |
+| c4_small/small2 | convnext_small | 123 | 2 | 12/12 | fold-2/5 | 1802 | 6.9154 | 11.0892 | 10.4742 | 9.4929 |  |  |  | done |
 | c1/density0 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 11.3443 | 10.0874 | 9.8651 | 10.4323 |  |  |  | done |
 | c1/density20 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 14.5954 | 11.6098 | 10.8539 | 12.3530 |  |  |  | done |
 
