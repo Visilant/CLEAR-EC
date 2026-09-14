@@ -71,6 +71,17 @@ rows:  # facts that exist nowhere in machine-readable form
     verdict: "CD MAPE only (scaled 10.14, raw 10.35, log-corr 0.65) vs CNN OOF CD 6.32; ridge stack with the CNN 6.37 vs 6.32. Region emulation costs <1 point; the loss is transfer from 19 one-series overlays."
     path: results/detector_20260913/s2
 
+  - campaign: platform
+    run: "Phase I submission 2 (v2ens_plus, 17 members, baked bundle, image 38863e52)"
+    date: "2026-09-14"
+    model: "5x V2-Tiny folds w2 + 5x Tiny folds w1 + 2x V2-Tiny all-data refits w2 + 5x V2-Base folds w3, geometric mean, flip TTA"
+    split: platform100
+    n: 100
+    mean: 8.8531
+    status: submitted
+    verdict: "Worse than slot 1 (8.7583) by +0.095 on the same 100 images; on the 9000-image OOF the paired 100-image delta was -0.023 +/- 0.046, so this is a 2.6-sigma outcome before the unvalidatable refits. Evaluation e18a55ed. Best-of ranking keeps 8.7583 (position 5 on 2026-09-14). V2-Base all-data refits (results/v2base_refit_20260914, seed 123 complete, seed 7 stopped) not submitted."
+    path: results/cnn_20260913/c0_slot2
+
 verdicts:  # levers tested; joined to rows by glob on "<campaign>/<run>" (docs/HANDOFF_2026-09-12.md section 4)
   - lever: "Label cleaning (drop top-2 percent flagged from training)"
     runs: ["noise_floor_20260912/b1_*"]

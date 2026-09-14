@@ -1,0 +1,26 @@
+# Slot 3 members: ConvNeXt-V2-Base all-data refits, same recipe as the B3 folds
+# (results/noise_floor_20260912/b3_v2base_fold*: OOF 8.838, the strongest family). Unvalidatable by
+# construction; check history.csv train loss is monotone before use.
+name: v2base_refit_20260914
+results_dir: results/v2base_refit_20260914
+gpus: [0, 1]
+concurrent_per_gpu: 1
+base:
+  model: timm:convnextv2_base.fcmae_ft_in22k_in1k
+  input_mode: whole
+  loss: relative
+  batch_size: 8
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+  amp: true
+  channels_last: true
+  augment_flips: true
+  ema: 0.999
+  sched: cosine
+  warmup_epochs: 1
+  epochs: 8
+  patience: 0
+  clip_grad: 1.0
+arms:
+  - {name: v2base_refit, seeds: [123, 7], all_data: true}
+post: {}

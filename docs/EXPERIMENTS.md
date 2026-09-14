@@ -1,6 +1,6 @@
 # CLEAR-EC experiment ledger
 
-Generated 2026-09-14 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 208 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
+Generated 2026-09-14 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 210 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
 
 Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is better). Splits: `oof9000` = every labelled image scored by the fold model that did not train on it (the compass); `val892` = the original slide-disjoint val split (best-epoch numbers there are optimistic); `platform100` = the hidden Phase I test set; `test906` = the August one-shot test split; `floor` = label-noise floors, not models.
 
@@ -31,6 +31,7 @@ Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is be
 |---|---|---|---:|---:|---:|---:|---|
 | platform | leaderboard snapshot |  |  |  |  | 8.7042 | Best team score at the first snapshot (idea.md); others 8.7452, 8.7720, 8.7843, 8.9145. |
 | platform | Phase I slot 1 (v2ens) | 5x ConvNeXt-V2-Tiny + 5x ConvNeXt-Tiny fold models, geometric mean, flip TTA |  |  |  | 8.7583 | 4th of the Phase I leaderboard on 2026-09-12; top five 8.7042 / 8.7452 / 8.7550 / 8.7583 / 8.7720. Consistent with OOF 8.84 +/- 0.96 (no distribution shift). |
+| platform | Phase I submission 2 (v2ens_plus, 17 members, baked bundle, image 38863e52) | 5x V2-Tiny folds w2 + 5x Tiny folds w1 + 2x V2-Tiny all-data refits w2 + 5x V2-Base folds w3, geometric mean, flip TTA |  |  |  | 8.8531 | Worse than slot 1 (8.7583) by +0.095 on the same 100 images; on the 9000-image OOF the paired 100-image delta was -0.023 +/- 0.046, so this is a 2.6-sigma outcome before the unvalidatable refits. Evaluation e18a55ed. Best-of ranking keeps 8.7583 (position 5 on 2026-09-14). V2-Base all-data refits (results/v2base_refit_20260914, seed 123 complete, seed 7 stopped) not submitted. |
 
 ### Original 892-image val split (top 15)
 
@@ -380,13 +381,23 @@ Two-epoch small CNN through experiments/run.py; not a result.
 
 ###  platform
 
-`platform`; 2 rows.
+`platform`; 3 rows.
 
 
 | run | model | seed | fold | epochs | split | n | CD | CV | HEX | mean | ci_low | ci_high | reference | status |
 |---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
 | leaderboard snapshot |  |  |  |  | platform100 | 100 |  |  |  | 8.7042 |  |  |  | reference |
 | Phase I slot 1 (v2ens) | 5x ConvNeXt-V2-Tiny + 5x ConvNeXt-Tiny fold models, geometric mean, flip TTA |  |  |  | platform100 | 100 |  |  |  | 8.7583 |  |  |  | submitted |
+| Phase I submission 2 (v2ens_plus, 17 members, baked bundle, image 38863e52) | 5x V2-Tiny folds w2 + 5x Tiny folds w1 + 2x V2-Tiny all-data refits w2 + 5x V2-Base folds w3, geometric mean, flip TTA |  |  |  | platform100 | 100 |  |  |  | 8.8531 |  |  |  | submitted |
+
+###  v2base_refit_20260914
+
+`results/v2base_refit_20260914`, report `results/v2base_refit_20260914/REPORT.md`; 1 rows.
+
+
+| run | model | seed | fold | epochs | split | n | CD | CV | HEX | mean | ci_low | ci_high | reference | status |
+|---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| v2base_refit_seed123 | timm:convnextv2_base.fcmae_ft_in22k_in1k | 123 |  | 8/8 | none (all data) |  |  |  |  |  |  |  |  | no-val |
 
 ### 2026-08-26 Exploratory data analysis
 
