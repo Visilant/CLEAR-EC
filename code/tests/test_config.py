@@ -16,6 +16,8 @@ FROZEN_DEFAULTS = {
     "exclude_idx_file": "", "crop_scale": 1.0,
     # Added 2026-09-13 (line C1): density-map CD head and trimmed relative loss; defaults keep the old behaviour.
     "cd_head": "gap", "loss_trim": 0.0,
+    # Added 2026-09-13 (line C2): label-transforming scale augmentation; 0 keeps the old behaviour.
+    "scale_jitter": 0.0,
 }
 
 
@@ -26,10 +28,11 @@ class ConfigTests(unittest.TestCase):
 
     def test_old_checkpoint_config_without_new_fields_loads(self):
         old = {k: v for k, v in FROZEN_DEFAULTS.items()
-               if k not in ("clip_grad", "uint8_inputs", "crop_scale", "cd_head", "loss_trim")}
+               if k not in ("clip_grad", "uint8_inputs", "crop_scale", "cd_head", "loss_trim", "scale_jitter")}
         cfg = config_from_checkpoint(old)
         self.assertEqual(cfg.clip_grad, 0.0)
         self.assertEqual((cfg.cd_head, cfg.loss_trim), ("gap", 0.0))
+        self.assertEqual(cfg.scale_jitter, 0.0)
         self.assertFalse(cfg.uint8_inputs)  # historical checkpoints used CPU float conversion
 
     def test_recipe_hash_ignores_run_identity(self):

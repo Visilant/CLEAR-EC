@@ -14,6 +14,8 @@ campaigns:  # display titles and one-line summaries per results/<dir>; order is 
   smoke_runner: {date: "2026-09-13", title: "Runner smoke test", summary: "Two-epoch small CNN through experiments/run.py; not a result."}
   cnn_20260913: {date: "2026-09-13", title: "Line C (2026-09-13): direct CNN, slot-2 candidate and screens", summary: "C0: OOF weight search over V2-Tiny / Tiny / V2-Base fold families and the v2ens_refit12 container (v2ens + two all-data V2-Tiny refits), built and replayed, not uploaded."}
 
+  detector_20260913: {date: "2026-09-13", title: "Line S (2026-09-13): trained cell-centre heatmap detector", summary: "S1 U-Net on 19 overlays (test recall 0.891, F1 0.901, count ratio 0.98); S2 readout over 9,000 (val-892 CD MAPE 10.1 vs CNN 6.32, stack adds nothing); S3 count-supervised retrain (direct-count CD ~8 on a val subset). Gates failed; Phase II material."}
+
 rows:  # facts that exist nowhere in machine-readable form
   - campaign: platform
     run: "Phase I slot 1 (v2ens)"
@@ -47,6 +49,27 @@ rows:  # facts that exist nowhere in machine-readable form
     status: reference
     verdict: "Best team score at the first snapshot (idea.md); others 8.7452, 8.7720, 8.7843, 8.9145."
     path: idea.md
+
+  - campaign: cnn_20260913
+    run: "Phase I slot 2 candidate v2ens_plus (17 members)"
+    date: "2026-09-13"
+    model: "v2ens + 2 all-data V2-Tiny refits (w2) + 5 V2-Base folds (w3), geometric mean, flip TTA"
+    split: oof9000
+    n: 9000
+    mean: 8.814
+    status: "built, not uploaded"
+    verdict: "Fold-only OOF (refits unvalidatable). Replay max rel diff 2.7e-7; 31 s/case on a shared A5000 (limit 5 min/case). Recommended for slot 2. See results/cnn_20260913/c0_slot2/REPORT.md section 5."
+    path: /home/visilant/CLEAR-EC-phase1-v2ens/results/phase1_v2ens_plus
+  - campaign: detector_20260913
+    run: "S2 detector CD readout (winfocus)"
+    date: "2026-09-13"
+    model: "heatmap U-Net (ConvNeXt-V2-Nano encoder) + Voronoi readout in focus-chosen 538x408 window"
+    split: val892
+    n: 892
+    mean: 10.14
+    status: "gate failed"
+    verdict: "CD MAPE only (scaled 10.14, raw 10.35, log-corr 0.65) vs CNN OOF CD 6.32; ridge stack with the CNN 6.37 vs 6.32. Region emulation costs <1 point; the loss is transfer from 19 one-series overlays."
+    path: results/detector_20260913/s2
 
 verdicts:  # levers tested; joined to rows by glob on "<campaign>/<run>" (docs/HANDOFF_2026-09-12.md section 4)
   - lever: "Label cleaning (drop top-2 percent flagged from training)"
@@ -101,3 +124,12 @@ deleted:  # 2026-09-13 cleanup (code/experiments/cleanup_20260913.sh and git wor
   - {path: .worktrees/spike-sam, size: 6.2G, reason: "spike worktree (its own .venv and 358M of detector weights; re-create with code/phase2/detector/download_weights.sh); code merged, results copied to results/sam_spike_20260912", date: "2026-09-13"}
   - {path: ".worktrees/regression-night, .worktrees/feature/training-viewer", size: 2M, reason: "merged (night) or superseded (viewer copy older than code/viewer)", date: "2026-09-13"}
   - {path: "branches fair-overnight-experiments, night/regression-levers, spike/sam-detector, feature/training-viewer, submission/phase1-seed123", size: "", reason: "merged into main or preserved by tag", date: "2026-09-13"}
+  - lever: "Trained cell-centre detector for CD (heatmap U-Net on the 19 overlays, +count supervision)"
+    runs: ["detector_20260913/*"]
+    verdict: "test-overlay recall 0.89 / F1 0.90 but val-892 CD MAPE 10.1 (S2) and ~8 with count supervision (S3) vs CNN 6.3; stack adds nothing. Needs overlays across series (Phase II)."
+  - lever: "Trimmed relative loss (drop 1 of 8 per batch)"
+    runs: ["cnn_20260913/trim*"]
+    verdict: "two-fold screen: fold0 8.869 vs 8.750, fold1 8.648 vs 8.639 (last+flips); loses or ties"
+  - lever: "Density-map CD head (sum of a softplus 1x1 map)"
+    runs: ["cnn_20260913/density*"]
+    verdict: "first parameterisation (1/(HW) scale) under-trains CD: fold0 10.43 vs 8.750; reparameterised density2 screened on fold 0 (see results/cnn_20260913/c1)"

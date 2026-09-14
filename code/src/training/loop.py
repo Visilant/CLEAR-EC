@@ -11,7 +11,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from src.training.common import METRICS, denormalize_targets, mape_per_metric
-from src.training.data import _photometric_augment, _random_crop_batch
+from src.training.data import _photometric_augment, _random_crop_batch, _rescale_cd_targets, _scale_jitter_batch
 from src.training.losses import _apply_criterion
 from src.training.targets import _inverse_target_space
 
@@ -31,6 +31,8 @@ def _run_epoch(
     lr_scheduler=None,
     crop_scale: float = 1.0,
     clip_grad: float = 0.0,
+    scale_jitter: float = 0.0,
+    antialias: bool = False,
 ) -> tuple[float, dict[str, float]]:
     train_mode = optimizer is not None
     model.train(train_mode)
@@ -38,6 +40,7 @@ def _run_epoch(
     n_images = 0
     preds_list: list[torch.Tensor] = []
     index_list: list[np.ndarray] = []
+    cd_mult_list: list[np.ndarray] = []  # scale_jitter: per-image CD label multipliers, for the train MAPE
 
     for x, y, y_raw, indices in loader:
         x = x.to(device, non_blocking=True)
@@ -54,6 +57,18 @@ def _run_epoch(
                 restore_context = base
                 model.context_size = (max(32, int(round(base[0] * x.shape[-2] / full_h))),
                                       max(32, int(round(base[1] * x.shape[-1] / full_w))))
+        if train_mode and scale_jitter > 0:
+            # Zoom straight from the full-resolution batch onto the model's (possibly crop-adjusted) input
+            # size, then hand the model an already-resampled canvas; the CD label follows the zoom.
+            base = getattr(model, "context_size", None)
+            if base is not None and restore_context is None:
+                restore_context = base
+            canvas = tuple(base) if base is not None else tuple(x.shape[-2:])
+            x, cd_mult = _scale_jitter_batch(x, scale_jitter, canvas, antialias=antialias)
+            if base is not None:
+                model.context_size = tuple(x.shape[-2:])
+            y, y_raw = _rescale_cd_targets(y, y_raw, cd_mult, stats, target_space)
+            cd_mult_list.append(cd_mult.cpu().numpy())
         if train_mode:
             optimizer.zero_grad(set_to_none=True)
         with torch.set_grad_enabled(train_mode):
@@ -95,6 +110,8 @@ def _run_epoch(
     gt = loader.dataset.frame.set_index("idx").loc[
         np.concatenate(index_list), list(METRICS)
     ].to_numpy(dtype=float)
+    if cd_mult_list:
+        gt[:, 0] *= np.concatenate(cd_mult_list)  # the train MAPE is against the zoomed labels
     if not np.isfinite(avg_loss) or not np.isfinite(preds).all():
         raise FloatingPointError("Non-finite training loss or predictions")
     return avg_loss, mape_per_metric(preds, gt)

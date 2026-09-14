@@ -72,9 +72,11 @@ def ridge_predict(fit, X):
 
 
 def stack(df, est_col, train_mask, val_mask, lam=1.0):
-    """Ridge on train of log CD_label on [log CD_cnn, log est, log n_total, mean_score]; val rows whose
-    features are not finite fall back to the CNN."""
-    F = np.c_[np.log(df["CD_cnn"]), np.log(df[est_col]), np.log(df["n_total"].clip(lower=1)), df["mean_score"]]
+    """Ridge on train of log CD_label on [log CD_cnn, log est (one column or a list), log n_total, mean_score];
+    val rows whose features are not finite fall back to the CNN."""
+    est_cols = [est_col] if isinstance(est_col, str) else list(est_col)
+    F = np.c_[np.log(df["CD_cnn"]), np.log(df[est_cols].clip(lower=1e-6)), np.log(df["n_total"].clip(lower=1)), df["mean_score"]]
+    est_col = "+".join(est_cols)
     y = np.log(df["CD_label"].to_numpy(float))
     ok = np.isfinite(F).all(1) & np.isfinite(y)
     fit = ridge_fit(F[train_mask & ok], y[train_mask & ok], lam)
@@ -85,6 +87,21 @@ def stack(df, est_col, train_mask, val_mask, lam=1.0):
                 val_n_fallback=int((val_mask & ~ok).sum()),
                 val_mape=mape(pred[val_mask], gt[val_mask]), train_mape=mape(pred[train_mask], gt[train_mask]),
                 cnn_val_mape=mape(df["CD_cnn"].to_numpy(float)[val_mask], gt[val_mask]))
+
+
+def tertile_table(df, cols, val_mask):
+    """MAPE and median estimate/label ratio by label tertile (edges from the val labels)."""
+    gt = df["CD_label"].to_numpy(float)
+    edges = np.quantile(gt[val_mask], [1 / 3, 2 / 3])
+    tert = np.digitize(gt, edges)
+    rows = []
+    for c in cols:
+        est = df[c].to_numpy(float)
+        for t, name in enumerate(("low", "mid", "high")):
+            m = val_mask & (tert == t) & np.isfinite(est) & (est > 0)
+            rows.append(dict(estimator=c, tertile=name, n=int(m.sum()), cd_range=f"{gt[m].min():.0f}-{gt[m].max():.0f}",
+                             mape=mape(est[m], gt[m]), median_ratio=float(np.median(est[m] / gt[m]))))
+    return pd.DataFrame(rows)
 
 
 def overlay_diagnostic(det, feats, labels, index, splits_of):
@@ -160,6 +177,8 @@ def main():
     best = geo.sort_values("train_scaled_mape").iloc[0]["estimator"]
     stacks = [stack(df, best, train_mask, val_mask, lam) for lam in (1.0, 10.0)]
     stacks += [stack(df, c, train_mask, val_mask, 1.0) for c in est_cols if c != best]
+    if "CD_direct" in est_cols:
+        stacks.append(stack(df, ["CD_winfocus", "CD_direct"], train_mask, val_mask, 1.0))
     # CNN-only ridge control (same recipe without the geometry column)
     F = np.c_[np.log(df["CD_cnn"]), np.log(df["n_total"].clip(lower=1)), df["mean_score"]]
     y = np.log(df["CD_label"].to_numpy(float)); ok = np.isfinite(F).all(1)
@@ -174,6 +193,11 @@ def main():
               f"CNN val {s['cnn_val_mape']:.3f}, coef {s['coef']}, fallback rows {s['val_n_fallback']}")
     print(f"control ridge without geometry: val MAPE {control['val_mape']:.3f}")
     print("other stacks (lam 1):", {s["est"]: round(s["val_mape"], 3) for s in stacks[2:]})
+    tcols = [c for c in ("CD_winfocus", "CD_direct") if c in est_cols] + ["CD_cnn"]
+    tert = tertile_table(df, tcols, val_mask)
+    tert.to_csv(os.path.join(args.dir, "tertiles.csv"), index=False)
+    print("\nval MAPE / median ratio by label tertile:")
+    print(tert.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
 
     det = np.load(os.path.join(args.dir, "detections.npz"))
     index = pd.read_csv(os.path.join(ROOT, "data/cache/index.csv")).set_index("ID")

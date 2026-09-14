@@ -143,6 +143,13 @@ def augment(img, target, mask, rng):
         img, target, mask = (a[:, ::-1] for a in (img, target, mask))
     if rng.random() < 0.5:
         img, target, mask = (a[::-1, :] for a in (img, target, mask))
+    img = intensity_jitter(img, rng)
+    return (np.ascontiguousarray(img, np.float32), np.ascontiguousarray(target, np.float32),
+            np.ascontiguousarray(mask, np.float32))
+
+
+def intensity_jitter(img, rng):
+    """Gamma / contrast / brightness jitter and occasional noise on a float [0,1] image."""
     gamma = float(np.exp(rng.uniform(-0.3, 0.3)))
     img = np.power(img, gamma)
     a = float(rng.uniform(0.75, 1.25))
@@ -150,8 +157,7 @@ def augment(img, target, mask, rng):
     img = np.clip(a * (img - 0.5) + 0.5 + b, 0.0, 1.0)
     if rng.random() < 0.3:
         img = np.clip(img + rng.normal(0, 0.02, img.shape), 0.0, 1.0)
-    return (np.ascontiguousarray(img, np.float32), np.ascontiguousarray(target, np.float32),
-            np.ascontiguousarray(mask, np.float32))
+    return img
 
 
 def make_batch(train_samples, batch_size, crop_size, rng):

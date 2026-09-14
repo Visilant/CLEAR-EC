@@ -50,6 +50,7 @@ class RegressionConfig:
     crop_scale: float = 1.0  # <1 enables scale-preserving random crops (min side fraction) in training
     cd_head: str = "gap"  # gap | density: CD as exp(log_scale) * mean of a softplus 1x1-conv map (ConvNeXt whole-image only)
     loss_trim: float = 0.0  # relative loss: drop the ceil(loss_trim * batch) largest per-sample errors when batch >= 4
+    scale_jitter: float = 0.0  # training-only zoom by s = exp(U(-j, j)) about the centre; CD label scaled by 1/s^2 (0 disables)
 
     def __post_init__(self) -> None:
         # JSON transport (config.json, checkpoints) turns the tuple into a list; normalise it back.

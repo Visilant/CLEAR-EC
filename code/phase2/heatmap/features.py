@@ -26,6 +26,7 @@ WIN_W, WIN_H = 538, 408
 STRIDE = 64
 BLOCK = 27
 FRAME_AREA_MM2 = FRAME_SHAPE[0] * FRAME_SHAPE[1] * UM_PER_PX ** 2 / 1e6
+WIN_AREA_MM2 = WIN_W * WIN_H * UM_PER_PX ** 2 / 1e6
 _DET = {}
 
 
@@ -121,6 +122,8 @@ def features_for(i):
     row = dict(idx=int(i), n_total=len(pts), mean_score=float(sc.mean()) if len(sc) else np.nan,
                CD_frame=len(pts) / FRAME_AREA_MM2, sat_frac=float(sat_blk.astype(float).mean()),
                focus_mean=float(focus_blk.astype(float).mean()), hm_mean=float(hm_blk.astype(float).mean()))
+    if "win_sum" in z:  # direct differentiable count over the focus window (S3 detector)
+        row["CD_direct"] = float(z["win_sum"][i]) / (2 * np.pi * float(z["sigma"]) ** 2) / WIN_AREA_MM2
     fs, fx, fy = block_window_scores(focus_blk)
     k = np.unravel_index(fs.argmax(), fs.shape)
     row["focus_max"] = float(fs[k])

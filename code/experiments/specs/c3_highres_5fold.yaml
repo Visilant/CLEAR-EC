@@ -1,0 +1,31 @@
+# Line C, step C3 (2026-09-13): ConvNeXt-V2-Tiny at 648x864, five slide-grouped folds, as a new ensemble family.
+# Single-model highres tied at 486x648 (x_highres); the question is diversity: correlation with v2fold and the
+# weight-search gain when added to v2ens + V2-Base.
+name: c3_highres_5fold
+results_dir: results/cnn_20260913/c3_highres
+cache_dir: data/cache
+labels_csv: data/final_train_ids.csv
+gpus: [1]
+concurrent_per_gpu: 1
+base:
+  model: timm:convnextv2_tiny.fcmae_ft_in22k_in1k
+  input_mode: whole
+  loss: relative
+  batch_size: 8
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+  amp: true
+  channels_last: true
+  augment_flips: true
+  ema: 0.999
+  sched: cosine
+  warmup_epochs: 1
+  epochs: 8
+  patience: 0
+  clip_grad: 1.0
+arms:
+  - {name: v2hr, seeds: [123], n_folds: 5, folds: [0, 1, 2, 3, 4], overrides: {context_height: 648, context_width: 864}}
+post:
+  score: {which: last, tta: flips}
+  ensembles:
+    - {name: v2hr_oof, members: {v2hr: 1}}

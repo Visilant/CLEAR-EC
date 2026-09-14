@@ -17,7 +17,7 @@ from src.data.cache import open_image_cache
 from src.training.common import METRICS, labels_for_indices, score_by_id
 from src.training.folds import resolve_indices
 from src.training.models import load_checkpoint_file
-from src.training.predict import VIEWS, predict_frame_tta
+from src.training.predict import parse_tta, predict_frame_tta
 
 
 def score_path(spec: Spec, job: Job, which: str, tta: str) -> Path:
@@ -42,7 +42,8 @@ def score_job(spec: Spec, job: Job, which: str = "last", tta: str = "flips", *, 
     idx = resolve_indices(spec.cache_dir, spec_indices)
     frame = labels_for_indices(spec.cache_dir, spec.labels_csv, idx)
     model, stats, cfg, epoch = load_checkpoint_file(ckpt, device)
-    preds = predict_frame_tta(model, stats, cfg, memmap, frame, device, views=VIEWS[tta], batch_size=batch_size)
+    views, scales = parse_tta(tta)
+    preds = predict_frame_tta(model, stats, cfg, memmap, frame, device, views=views, batch_size=batch_size, scales=scales)
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     preds.to_csv(out_csv, index=False)
     summary = {"job": job.name, "arm": job.arm, "ckpt_dir": str(ckpt.parent), "which": which, "epoch": epoch,

@@ -28,6 +28,76 @@ def _random_crop_batch(x: torch.Tensor, min_scale: float) -> torch.Tensor:
     return out
 
 
+def _zoom_batch(x: torch.Tensor, scales: torch.Tensor, canvas: tuple[int, int],
+                antialias: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+    """Zoom each full-resolution frame by its scale s about the centre, onto one shared canvas.
+
+    Zoom is measured against the model's own resample of the whole frame to `canvas` (s = 1 reproduces
+    it). Every sample is a centre window of the native frame resampled once (bilinear, `antialias` as in
+    the ConvNeXt input path). The canvas is min(1, min s) times the model's input size: a zoom-in (s > 1)
+    is a smaller native window filling the canvas, a zoom-out (s < 1) is the whole native frame on a
+    smaller canvas. The cache frame is the entire 972x1296 capture, so a zoom-out cannot draw on a larger
+    source region; shrinking the canvas keeps every pixel real (zero padding would put empty area into the
+    global average that the CD heads rely on; reflection would fabricate mirrored cells). The global-pool
+    and density heads are size-agnostic, as the crop_scale lever already relies on.
+
+    Returns (batch float32 in [0, 1] of shape (B, C, ch, cw), cd_mult) where cd_mult[i] is the exact
+    factor 1 / (s_y * s_x) the true cell density must be multiplied by, from the integer window actually
+    resampled (cells appear s times larger, so there are 1/s^2 as many per unit area)."""
+    batch, height, width = x.shape[0], int(x.shape[-2]), int(x.shape[-1])
+    scales = scales.to(torch.float64).cpu()
+    if batch != scales.numel():
+        raise ValueError(f"one scale per sample: batch {batch}, scales {scales.numel()}")
+    if not bool((scales > 0).all()):
+        raise ValueError("scales must be positive")
+    c = min(1.0, float(scales.min()))
+    ch, cw = max(32, int(round(canvas[0] * c))), max(32, int(round(canvas[1] * c)))
+    out = torch.empty((batch, x.shape[1], ch, cw), dtype=torch.float32, device=x.device)
+    cd_mult = torch.empty(batch, dtype=torch.float32)
+    for i in range(batch):
+        s = float(scales[i])
+        wh = min(height, max(2, int(round(height * c / s))))
+        ww = min(width, max(2, int(round(width * c / s))))
+        y0, x0 = (height - wh) // 2, (width - ww) // 2
+        window = x[i:i + 1, :, y0:y0 + wh, x0:x0 + ww]
+        window = window.float().div(255.0) if window.dtype == torch.uint8 else window.float()
+        if (wh, ww) == (ch, cw):
+            out[i] = window[0]
+        else:
+            out[i] = torch.nn.functional.interpolate(window, size=(ch, cw), mode="bilinear",
+                                                     align_corners=False, antialias=antialias)[0]
+        s_y = (ch / wh) * (height / canvas[0])
+        s_x = (cw / ww) * (width / canvas[1])
+        cd_mult[i] = 1.0 / (s_y * s_x)
+    return out, cd_mult.to(x.device)
+
+
+def _scale_jitter_batch(x: torch.Tensor, scale_jitter: float, canvas: tuple[int, int],
+                        antialias: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+    """Per-sample log-uniform zoom s = exp(U(-scale_jitter, +scale_jitter)); see _zoom_batch."""
+    j = float(scale_jitter)
+    scales = torch.exp(torch.empty(x.shape[0]).uniform_(-j, j))
+    return _zoom_batch(x, scales, canvas, antialias=antialias)
+
+
+def _rescale_cd_targets(y: torch.Tensor, y_raw: torch.Tensor, cd_mult: torch.Tensor,
+                        stats: dict[str, dict[str, float]], target_space: str) -> tuple[torch.Tensor, torch.Tensor]:
+    """Multiply the raw CD label by cd_mult and re-normalise the CD column of y the way the dataset does
+    (target space transform, then z-score); CV and HEX are unchanged. Returns new tensors."""
+    y_raw = y_raw.clone()
+    y = y.clone()
+    cd_mult = cd_mult.to(y_raw.device, y_raw.dtype)
+    y_raw[:, 0] = y_raw[:, 0] * cd_mult
+    cd = y_raw[:, 0]
+    if target_space == "log":
+        cd = torch.log(cd.clamp_min(1e-6))
+    elif target_space != "linear":
+        raise ValueError(f"Unknown target_space: {target_space}")
+    cd_name = METRICS[0]
+    y[:, 0] = ((cd - stats[cd_name]["mean"]) / stats[cd_name]["std"]).to(y.dtype)
+    return y, y_raw
+
+
 def _photometric_augment(x: torch.Tensor) -> torch.Tensor:
     """GPU-side photometric jitter on a float [0,1] image batch (B,1,H,W)."""
     import torchvision.transforms.functional as TF

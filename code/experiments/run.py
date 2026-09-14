@@ -2,7 +2,7 @@
 
   run SPEC [--gpus 0,1] [--limit N] [--dry-run] [--detach] [--no-post] [--results-dir DIR] [--force-post]
   status RESULTS_DIR
-  score  RESULTS_DIR [--which last|best] [--tta none|flips] [--jobs GLOB] [--force] [--gpu N]
+  score  RESULTS_DIR [--which last|best] [--tta none|flips|flips_s3] [--jobs GLOB] [--force] [--gpu N]
   report RESULTS_DIR
   ledger [--results DIR] [--out DIR]
 """
@@ -182,7 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("status", help="job table for a results dir"); p.add_argument("results_dir"); p.set_defaults(func=cmd_status)
     p = sub.add_parser("score", help="score finished jobs on their held-out indices")
     p.add_argument("results_dir"); p.add_argument("--which", choices=["last", "best"], default="last")
-    p.add_argument("--tta", choices=["none", "flips"], default="flips"); p.add_argument("--jobs", default="", help="glob on job names")
+    p.add_argument("--tta", choices=["none", "flips", "flips_s3"], default="flips"); p.add_argument("--jobs", default="", help="glob on job names")
     p.add_argument("--force", action="store_true"); p.add_argument("--gpu", type=int, default=0); p.set_defaults(func=cmd_score)
     p = sub.add_parser("report", help="write REPORT.md for a results dir"); p.add_argument("results_dir"); p.set_defaults(func=cmd_report)
     p = sub.add_parser("ledger", help="regenerate docs/EXPERIMENTS.md and docs/experiments.csv from every campaign")

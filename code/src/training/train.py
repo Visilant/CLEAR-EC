@@ -142,6 +142,7 @@ def train_regression_cnn(
             model, train_loader, criterion, device, stats, optimizer, scaler=scaler, amp=cfg.amp,
             target_space=cfg.target_space, photometric=cfg.photometric,
             ema_update=ema_update, lr_scheduler=lr_scheduler, crop_scale=cfg.crop_scale, clip_grad=cfg.clip_grad,
+            scale_jitter=cfg.scale_jitter, antialias=cfg.antialias,
         )
         row = {
             "epoch": epoch,

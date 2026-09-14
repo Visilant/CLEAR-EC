@@ -1,0 +1,29 @@
+# Line C, step C2 (2026-09-13): label-transforming scale jitter. Zooming a frame by s multiplies true CD by 1/s^2
+# and leaves CV/HEX unchanged, so training can be extended into the sparse CD tails. Two-fold screen against
+# results/night_20260912/oof/v2fold{0,1}_last_flips.csv (paired comparison done outside the runner).
+name: c2_scale_jitter
+results_dir: results/cnn_20260913/c2
+cache_dir: data/cache
+labels_csv: data/final_train_ids.csv
+gpus: [0]
+concurrent_per_gpu: 1
+base:
+  model: timm:convnextv2_tiny.fcmae_ft_in22k_in1k
+  input_mode: whole
+  loss: relative
+  batch_size: 8
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+  amp: true
+  channels_last: true
+  augment_flips: true
+  ema: 0.999
+  sched: cosine
+  warmup_epochs: 1
+  epochs: 8
+  patience: 0
+  clip_grad: 1.0
+arms:
+  - {name: sj02, seeds: [123], n_folds: 5, folds: [0, 1], overrides: {scale_jitter: 0.2}}
+post:
+  score: {which: last, tta: flips}

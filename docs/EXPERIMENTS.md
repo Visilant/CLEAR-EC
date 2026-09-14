@@ -1,6 +1,6 @@
 # CLEAR-EC experiment ledger
 
-Generated 2026-09-13 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 190 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
+Generated 2026-09-14 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 193 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
 
 Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is better). Splits: `oof9000` = every labelled image scored by the fold model that did not train on it (the compass); `val892` = the original slide-disjoint val split (best-epoch numbers there are optimistic); `platform100` = the hidden Phase I test set; `test906` = the August one-shot test split; `floor` = label-noise floors, not models.
 
@@ -324,12 +324,15 @@ Detector + Voronoi readout; every pre-registered gate failed. Code in code/phase
 
 ### 2026-09-13 Line C (2026-09-13): direct CNN, slot-2 candidate and screens
 
-`results/cnn_20260913`; 1 rows.
+`results/cnn_20260913`; 4 rows.
 C0: OOF weight search over V2-Tiny / Tiny / V2-Base fold families and the v2ens_refit12 container (v2ens + two all-data V2-Tiny refits), built and replayed, not uploaded.
 
 | run | model | seed | fold | epochs | split | n | CD | CV | HEX | mean | ci_low | ci_high | reference | status |
 |---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
 | c0_slot2 (v2ens_refit12 container) | v2ens (5x ConvNeXt-V2-Tiny w=2 + 5x ConvNeXt-Tiny w=1) + 2x all-data ConvNeXt-V2-Tiny refits (seeds 123/7, w=2), geometric mean, flip TTA |  |  |  | oof9000 | 9000 | 6.3000 | 10.2515 | 9.9652 | 8.8389 |  |  |  | built, not uploaded |
+| c1/trim1 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 1 | 8/8 | fold-1/5 | 1783 | 6.1376 | 10.0972 | 9.7102 | 8.6483 |  |  |  | done |
+| c1/trim0 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 6.6573 | 10.0451 | 9.9051 | 8.8691 |  |  |  | done |
+| c1/density0 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 11.3443 | 10.0874 | 9.8651 | 10.4323 |  |  |  | done |
 
 ### 2026-09-13 Runner smoke test
 
