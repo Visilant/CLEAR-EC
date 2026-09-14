@@ -1,5 +1,6 @@
 # Line C, step C4 (2026-09-14): torchvision ConvNeXt-Small with the Tiny recipe, five folds, as a further
 # ensemble family (single-model x_small tied Tiny on val 892; the question is diversity in the weight search).
+name: c4_small_5fold
 results_dir: results/cnn_20260913/c4_small
 cache_dir: data/cache
 labels_csv: data/final_train_ids.csv
