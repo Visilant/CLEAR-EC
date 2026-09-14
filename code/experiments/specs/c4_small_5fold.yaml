@@ -1,0 +1,28 @@
+# Line C, step C4 (2026-09-14): torchvision ConvNeXt-Small with the Tiny recipe, five folds, as a further
+# ensemble family (single-model x_small tied Tiny on val 892; the question is diversity in the weight search).
+results_dir: results/cnn_20260913/c4_small
+cache_dir: data/cache
+labels_csv: data/final_train_ids.csv
+gpus: [0]
+concurrent_per_gpu: 1
+base:
+  model: convnext_small
+  input_mode: whole
+  loss: relative
+  batch_size: 8
+  lr: 1.0e-4
+  weight_decay: 1.0e-4
+  amp: true
+  channels_last: true
+  augment_flips: true
+  ema: 0.999
+  sched: cosine
+  warmup_epochs: 1
+  epochs: 12
+  patience: 0
+arms:
+  - {name: small, seeds: [123], n_folds: 5, folds: [0, 1, 2, 3, 4]}
+post:
+  score: {which: last, tta: flips}
+  ensembles:
+    - {name: small_oof, members: {small: 1}}

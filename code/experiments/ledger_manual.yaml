@@ -125,6 +125,10 @@ verdicts:  # levers tested; joined to rows by glob on "<campaign>/<run>" (docs/H
     runs: ["cnn_20260913/density*"]
     verdict: "fold0: first parameterisation 10.43, reparameterised exp(log_scale)*mean 12.39 (CD 14.2, CV 11.7, HEX 11.3) vs 8.750; all three metrics worse, the head harms the shared backbone. Dead."
     do_not_rerun: yes
+  - lever: "Label-transforming scale jitter (zoom s, CD x 1/s^2), +/-0.2 log-uniform"
+    runs: ["cnn_20260913/sj02*"]
+    verdict: "two-fold screen: fold0 8.944 vs 8.766, fold1 8.861 vs 8.639 (last epoch); CD worsens (6.90 vs 6.38 on fold 0), CV/HEX unchanged. Loses."
+    do_not_rerun: yes
 deleted:  # 2026-09-13 cleanup (code/experiments/cleanup_20260913.sh and git worktree removal)
   - {path: results/failed_run_20260827_125247, size: 3.5M, reason: "aborted first overnight attempt (dev_limit 1500), superseded by results/overnight", date: "2026-09-13"}
   - {path: results/baseline, size: 4K, reason: "empty stub", date: "2026-09-13"}
