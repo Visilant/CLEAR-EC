@@ -63,6 +63,19 @@ remaining headroom is in CD, Phase II directions).
 
 ## 4. Submission path
 
+Platform rules as confirmed on 2026-09-14 (they differ from the earlier "3 submissions" reading):
+Phase I submissions are unlimited, container image uploads are limited (one more image after the
+v2ens_plus image, version `38863e52`, which is the live algorithm), Model archives can be uploaded
+and attached without limit, and the leaderboard keeps a team's best score. Consequences: every
+candidate should be a Model archive (`submission.json` + checkpoints at the archive root; the live
+image reads members, weights, `tta` and `clamp` from it and can build V2-Tiny, Tiny and V2-Base),
+the remaining container upload is reserved for a code change (for example a detector-based method),
+and an attached Model at `/opt/ml/model` always overrides the bundle baked into the image. Repeated
+submissions of near-identical candidates select on the 100 hidden images (one candidate's score has
+SD about 0.06 relative to another's); record every platform score in
+`code/experiments/ledger_manual.yaml` and treat the spread as noise, not as a lever.
+
+
 The submitted container lives in the sibling worktree `/home/visilant/CLEAR-EC-phase1-v2ens`
 (branch `submission/phase1-v2ens`, tag `phase1-slot1-v2ens`): its `docs/PHASE_I_SUBMISSION_V2ENS.md`
 has the build, replay and export steps; its `inference.py` is the reference for preprocessing,

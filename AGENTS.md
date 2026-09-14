@@ -78,8 +78,10 @@ six-sided cells. Preserve these semantics unless explicitly changing the method.
   `submission/phase1-v2ens`, worktree `/home/visilant/CLEAR-EC-phase1-v2ens`, frozen) and
   `phase1-seed123-unused`. Older branches and worktrees were merged and deleted on 2026-09-13.
 - Score: Phase I slot 1 scored 8.7583 on the hidden 100 images (4th; top five 8.70 to 8.77).
-  Locally the same ensemble is 8.84 out-of-fold over 9,000 images. Two slots remain until the
-  2026-09-14 deadline; see the handoff for the slot recommendation.
+  Locally the same ensemble is 8.84 out-of-fold over 9,000 images. Submissions are unlimited but
+  one container upload remains (live image: v2ens_plus, `38863e52`); candidates go up as Model
+  archives attached to it. The 17-member v2ens_plus scored 8.8531 on 2026-09-14 (worse than
+  slot 1 on the same 100 images). Current state and open threads: docs/HANDOFF_2026-09-14.md.
 - Every lever tried since (label cleaning, capacity, longer training, seeds, TTA, calibration,
   resolution, augmentation) moved the score by 0.03 or less; CV and HEX sit at the label-noise
   floor. `docs/EXPERIMENTS.md` carries the verdict table; do not rerun what it marks.
