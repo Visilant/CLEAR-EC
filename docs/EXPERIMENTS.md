@@ -1,6 +1,6 @@
 # CLEAR-EC experiment ledger
 
-Generated 2026-09-14 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 195 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
+Generated 2026-09-14 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 196 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
 
 Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is better). Splits: `oof9000` = every labelled image scored by the fold model that did not train on it (the compass); `val892` = the original slide-disjoint val split (best-epoch numbers there are optimistic); `platform100` = the hidden Phase I test set; `test906` = the August one-shot test split; `floor` = label-noise floors, not models.
 
@@ -78,7 +78,7 @@ Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is be
 | Cellpose baseline and ridge calibration | overnight/*, audit_20260911/* | Cellpose 'cyto' outputs correlate 0.2 to 0.3 with GT CD; ridge (14.8) and the constant (14.2) beat it; superseded by direct regression | yes |
 | Trained cell-centre detector for CD (heatmap U-Net on the 19 overlays, +count supervision) | detector_20260913/* | test-overlay recall 0.89 / F1 0.90 but val-892 CD MAPE 10.1 (S2) and ~8 with count supervision (S3) vs CNN 6.3; stack adds nothing. Needs overlays across series (Phase II). | yes |
 | Trimmed relative loss (drop 1 of 8 per batch) | cnn_20260913/trim* | two-fold screen: fold0 8.869 vs 8.750, fold1 8.648 vs 8.639 (last+flips); loses or ties | yes |
-| Density-map CD head (sum of a softplus 1x1 map) | cnn_20260913/density* | first parameterisation (1/(HW) scale) under-trains CD: fold0 10.43 vs 8.750; reparameterised density2 screened on fold 0 (see results/cnn_20260913/c1) | yes |
+| Density-map CD head (sum of a softplus 1x1 map) | cnn_20260913/density* | fold0: first parameterisation 10.43, reparameterised exp(log_scale)*mean 12.39 (CD 14.2, CV 11.7, HEX 11.3) vs 8.750; all three metrics worse, the head harms the shared backbone. Dead. | yes |
 
 ## Campaigns
 
@@ -328,7 +328,7 @@ Detector + Voronoi readout; every pre-registered gate failed. Code in code/phase
 
 ### 2026-09-13 Line C (2026-09-13): direct CNN, slot-2 candidate and screens
 
-`results/cnn_20260913`; 5 rows.
+`results/cnn_20260913`; 6 rows.
 C0: OOF weight search over V2-Tiny / Tiny / V2-Base fold families and the v2ens_refit12 container (v2ens + two all-data V2-Tiny refits), built and replayed, not uploaded.
 
 | run | model | seed | fold | epochs | split | n | CD | CV | HEX | mean | ci_low | ci_high | reference | status |
@@ -338,6 +338,7 @@ C0: OOF weight search over V2-Tiny / Tiny / V2-Base fold families and the v2ens_
 | c1/trim1 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 1 | 8/8 | fold-1/5 | 1783 | 6.1376 | 10.0972 | 9.7102 | 8.6483 |  |  |  | done |
 | c1/trim0 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 6.6573 | 10.0451 | 9.9051 | 8.8691 |  |  |  | done |
 | c1/density0 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 11.3443 | 10.0874 | 9.8651 | 10.4323 |  |  |  | done |
+| c1/density20 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 14.5954 | 11.6098 | 10.8539 | 12.3530 |  |  |  | done |
 
 ### 2026-09-13 Line S (2026-09-13): trained cell-centre heatmap detector
 
