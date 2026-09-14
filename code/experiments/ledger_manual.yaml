@@ -113,6 +113,18 @@ verdicts:  # levers tested; joined to rows by glob on "<campaign>/<run>" (docs/H
     verdict: "Cellpose 'cyto' outputs correlate 0.2 to 0.3 with GT CD; ridge (14.8) and the constant (14.2) beat it; superseded by direct regression"
     do_not_rerun: true
 
+  - lever: "Trained cell-centre detector for CD (heatmap U-Net on the 19 overlays, +count supervision)"
+    runs: ["detector_20260913/*"]
+    verdict: "test-overlay recall 0.89 / F1 0.90 but val-892 CD MAPE 10.1 (S2) and ~8 with count supervision (S3) vs CNN 6.3; stack adds nothing. Needs overlays across series (Phase II)."
+    do_not_rerun: yes
+  - lever: "Trimmed relative loss (drop 1 of 8 per batch)"
+    runs: ["cnn_20260913/trim*"]
+    verdict: "two-fold screen: fold0 8.869 vs 8.750, fold1 8.648 vs 8.639 (last+flips); loses or ties"
+    do_not_rerun: yes
+  - lever: "Density-map CD head (sum of a softplus 1x1 map)"
+    runs: ["cnn_20260913/density*"]
+    verdict: "first parameterisation (1/(HW) scale) under-trains CD: fold0 10.43 vs 8.750; reparameterised density2 screened on fold 0 (see results/cnn_20260913/c1)"
+    do_not_rerun: yes
 deleted:  # 2026-09-13 cleanup (code/experiments/cleanup_20260913.sh and git worktree removal)
   - {path: results/failed_run_20260827_125247, size: 3.5M, reason: "aborted first overnight attempt (dev_limit 1500), superseded by results/overnight", date: "2026-09-13"}
   - {path: results/baseline, size: 4K, reason: "empty stub", date: "2026-09-13"}
@@ -124,12 +136,3 @@ deleted:  # 2026-09-13 cleanup (code/experiments/cleanup_20260913.sh and git wor
   - {path: .worktrees/spike-sam, size: 6.2G, reason: "spike worktree (its own .venv and 358M of detector weights; re-create with code/phase2/detector/download_weights.sh); code merged, results copied to results/sam_spike_20260912", date: "2026-09-13"}
   - {path: ".worktrees/regression-night, .worktrees/feature/training-viewer", size: 2M, reason: "merged (night) or superseded (viewer copy older than code/viewer)", date: "2026-09-13"}
   - {path: "branches fair-overnight-experiments, night/regression-levers, spike/sam-detector, feature/training-viewer, submission/phase1-seed123", size: "", reason: "merged into main or preserved by tag", date: "2026-09-13"}
-  - lever: "Trained cell-centre detector for CD (heatmap U-Net on the 19 overlays, +count supervision)"
-    runs: ["detector_20260913/*"]
-    verdict: "test-overlay recall 0.89 / F1 0.90 but val-892 CD MAPE 10.1 (S2) and ~8 with count supervision (S3) vs CNN 6.3; stack adds nothing. Needs overlays across series (Phase II)."
-  - lever: "Trimmed relative loss (drop 1 of 8 per batch)"
-    runs: ["cnn_20260913/trim*"]
-    verdict: "two-fold screen: fold0 8.869 vs 8.750, fold1 8.648 vs 8.639 (last+flips); loses or ties"
-  - lever: "Density-map CD head (sum of a softplus 1x1 map)"
-    runs: ["cnn_20260913/density*"]
-    verdict: "first parameterisation (1/(HW) scale) under-trains CD: fold0 10.43 vs 8.750; reparameterised density2 screened on fold 0 (see results/cnn_20260913/c1)"

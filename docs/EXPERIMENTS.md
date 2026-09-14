@@ -1,6 +1,6 @@
 # CLEAR-EC experiment ledger
 
-Generated 2026-09-14 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 193 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
+Generated 2026-09-14 by `python -m experiments.run ledger` from `results/` and `code/experiments/ledger_manual.yaml`; 195 rows, machine-readable copy in `docs/experiments.csv`. Do not edit by hand: change the YAML or the results and regenerate.
 
 Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is better). Splits: `oof9000` = every labelled image scored by the fold model that did not train on it (the compass); `val892` = the original slide-disjoint val split (best-epoch numbers there are optimistic); `platform100` = the hidden Phase I test set; `test906` = the August one-shot test split; `floor` = label-noise floors, not models.
 
@@ -10,6 +10,7 @@ Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is be
 
 | campaign | run | model | CD | CV | HEX | mean | verdict |
 |---|---|---|---:|---:|---:|---:|---|
+| cnn_20260913 | Phase I slot 2 candidate v2ens_plus (17 members) | v2ens + 2 all-data V2-Tiny refits (w2) + 5 V2-Base folds (w3), geometric mean, flip TTA |  |  |  | 8.8140 | Fold-only OOF (refits unvalidatable). Replay max rel diff 2.7e-7; 31 s/case on a shared A5000 (limit 5 min/case). Recommended for slot 2. See results/cnn_20260913/c0_slot2/REPORT.md section 5. |
 | noise_floor_20260912 | A3 OOF ens | v2ens (V2 w2 + Tiny w1) | 6.3000 | 10.2515 | 9.9652 | 8.8389 |  |
 | night_20260912 | v2ens = candidate_1 (submitted slot 1) | 5x convnextv2_tiny (w 2), 5x convnext_tiny (w 1) | 6.3000 | 10.2515 | 9.9652 | 8.8389 |  |
 | cnn_20260913 | c0_slot2 (v2ens_refit12 container) | v2ens (5x ConvNeXt-V2-Tiny w=2 + 5x ConvNeXt-Tiny w=1) + 2x all-data ConvNeXt-V2-Tiny refits (seeds 123/7, w=2), geometric mean, flip TTA | 6.3000 | 10.2515 | 9.9652 | 8.8389 | Score is the fold-only part (= v2ens); the refits saw every label and cannot be validated. Weight search: V2-Base w=3 would give OOF 8.814 (delta -0.025, CI -0.036 to -0.012) but costs 17.8 s/image on the A5000, so excluded. Image clear_ec_phase1:v2ens_refit12; 50-case replay max rel diff 3.3e-7; 15.2 s/case on a shared GPU 0. See results/cnn_20260913/c0_slot2/REPORT.md. |
@@ -75,6 +76,9 @@ Score is the equal-weight mean of the CD, CV and HEX MAPEs (percent, lower is be
 | Flip TTA / best-epoch selection | night_20260912/* [*+flips] | +0.02 to 0.03 / +0.02; TTA is in v2ens, best-epoch selection is not used (fixed budget) | no |
 | Small-CNN normalization x seeds (round 1) | round1_20260912_002113/* | BatchNorm beats GroupNorm by 0.5; three-seed ensemble +0.09 missed the 0.2 gate; superseded by ConvNeXt | yes |
 | Cellpose baseline and ridge calibration | overnight/*, audit_20260911/* | Cellpose 'cyto' outputs correlate 0.2 to 0.3 with GT CD; ridge (14.8) and the constant (14.2) beat it; superseded by direct regression | yes |
+| Trained cell-centre detector for CD (heatmap U-Net on the 19 overlays, +count supervision) | detector_20260913/* | test-overlay recall 0.89 / F1 0.90 but val-892 CD MAPE 10.1 (S2) and ~8 with count supervision (S3) vs CNN 6.3; stack adds nothing. Needs overlays across series (Phase II). | yes |
+| Trimmed relative loss (drop 1 of 8 per batch) | cnn_20260913/trim* | two-fold screen: fold0 8.869 vs 8.750, fold1 8.648 vs 8.639 (last+flips); loses or ties | yes |
+| Density-map CD head (sum of a softplus 1x1 map) | cnn_20260913/density* | first parameterisation (1/(HW) scale) under-trains CD: fold0 10.43 vs 8.750; reparameterised density2 screened on fold 0 (see results/cnn_20260913/c1) | yes |
 
 ## Campaigns
 
@@ -324,15 +328,25 @@ Detector + Voronoi readout; every pre-registered gate failed. Code in code/phase
 
 ### 2026-09-13 Line C (2026-09-13): direct CNN, slot-2 candidate and screens
 
-`results/cnn_20260913`; 4 rows.
+`results/cnn_20260913`; 5 rows.
 C0: OOF weight search over V2-Tiny / Tiny / V2-Base fold families and the v2ens_refit12 container (v2ens + two all-data V2-Tiny refits), built and replayed, not uploaded.
 
 | run | model | seed | fold | epochs | split | n | CD | CV | HEX | mean | ci_low | ci_high | reference | status |
 |---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| Phase I slot 2 candidate v2ens_plus (17 members) | v2ens + 2 all-data V2-Tiny refits (w2) + 5 V2-Base folds (w3), geometric mean, flip TTA |  |  |  | oof9000 | 9000 |  |  |  | 8.8140 |  |  |  | built, not uploaded |
 | c0_slot2 (v2ens_refit12 container) | v2ens (5x ConvNeXt-V2-Tiny w=2 + 5x ConvNeXt-Tiny w=1) + 2x all-data ConvNeXt-V2-Tiny refits (seeds 123/7, w=2), geometric mean, flip TTA |  |  |  | oof9000 | 9000 | 6.3000 | 10.2515 | 9.9652 | 8.8389 |  |  |  | built, not uploaded |
 | c1/trim1 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 1 | 8/8 | fold-1/5 | 1783 | 6.1376 | 10.0972 | 9.7102 | 8.6483 |  |  |  | done |
 | c1/trim0 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 6.6573 | 10.0451 | 9.9051 | 8.8691 |  |  |  | done |
 | c1/density0 | timm:convnextv2_tiny.fcmae_ft_in22k_in1k | 123 | 0 | 8/8 | fold-0/5 | 1802 | 11.3443 | 10.0874 | 9.8651 | 10.4323 |  |  |  | done |
+
+### 2026-09-13 Line S (2026-09-13): trained cell-centre heatmap detector
+
+`results/detector_20260913`; 1 rows.
+S1 U-Net on 19 overlays (test recall 0.891, F1 0.901, count ratio 0.98); S2 readout over 9,000 (val-892 CD MAPE 10.1 vs CNN 6.32, stack adds nothing); S3 count-supervised retrain (direct-count CD ~8 on a val subset). Gates failed; Phase II material.
+
+| run | model | seed | fold | epochs | split | n | CD | CV | HEX | mean | ci_low | ci_high | reference | status |
+|---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| S2 detector CD readout (winfocus) | heatmap U-Net (ConvNeXt-V2-Nano encoder) + Voronoi readout in focus-chosen 538x408 window |  |  |  | val892 | 892 |  |  |  | 10.1400 |  |  |  | gate failed |
 
 ### 2026-09-13 Runner smoke test
 
